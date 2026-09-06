@@ -10,7 +10,7 @@ import {
   syncAddToToday, syncRemoveFromToday, syncReorderToday,
   syncToggleCompletion,
   getDayStats, formatDateKey, initSync, isServerOnline,
-  resetData,
+  resetData, pullFromServer
 } from './services/syncAdapter';
 import { api } from './services/api';
 import { initStorage } from './utils/storage';
@@ -132,12 +132,17 @@ const MainAppContent: React.FC = () => {
       // Save pending sub-tasks for new tasks
       const pending = (taskData as any)._pendingSubtasks as string[] | undefined;
       if (pending && pending.length > 0 && created?.id) {
+        let addedSubtasks = false;
         for (const title of pending) {
           try {
             await api.createSubtask(created.id, { title });
+            addedSubtasks = true;
           } catch (err) {
             console.error('Failed to save pending subtask:', err);
           }
+        }
+        if (addedSubtasks && serverOnline) {
+          await pullFromServer();
         }
       }
     }
@@ -272,7 +277,13 @@ const MainAppContent: React.FC = () => {
 
       <TaskModal
         isOpen={isTaskModalOpen}
-        onClose={() => setIsTaskModalOpen(false)}
+        onClose={async () => {
+          setIsTaskModalOpen(false);
+          if (serverOnline) {
+            await pullFromServer();
+            reloadLocalData();
+          }
+        }}
         onSave={handleSaveTask}
         categories={categories}
         initialTask={editingTask}

@@ -142,7 +142,7 @@ async function executeOp(op: SyncOp) {
 // is reachable AND there are no pending writes.
 // ─────────────────────────────────────────────────────────
 
-async function pullFromServer() {
+export async function pullFromServer() {
   const hasPending = getQueue().length > 0;
   if (hasPending) {
     // Drain pending writes first before pulling
