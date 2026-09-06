@@ -26,8 +26,8 @@ import { TaskModal } from './components/tasks/TaskModal';
 import { CategoryModal } from './components/tasks/CategoryModal';
 import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
 
-// Placeholder Google Client ID — replaced at runtime if provided in env
-const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '108264589260-dummy.apps.googleusercontent.com';
+// Google Client ID for OAuth
+const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '87073790500-4ilmlvqndgk06pj6lgbds8lar1qiq4ef.apps.googleusercontent.com';
 
 const MainAppContent: React.FC = () => {
   const { user, loading } = useAuth();
