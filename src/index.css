@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root,
+  [data-theme="dark-midnight"] {
+    --app-bg: 9 10 15;
+    --card-bg: 15 17 26;
+    --hover-bg: 21 24 36;
+    --border-color: 28 32 48;
+    --border-strong: 36 41 62;
+    --text-title: 255 255 255;
+    --text-body: 248 250 252;
+    --text-sub: 148 163 184;
+    --accent-primary: 139 92 246; /* Violet */
+    --accent-secondary: 99 102 241; /* Indigo */
+    color-scheme: dark;
+  }
+
+  [data-theme="cyberpunk"] {
+    --app-bg: 7 5 15;
+    --card-bg: 16 11 33;
+    --hover-bg: 24 17 48;
+    --border-color: 36 22 71;
+    --border-strong: 54 29 110;
+    --text-title: 56 189 248;
+    --text-body: 248 250 252;
+    --text-sub: 167 139 250;
+    --accent-primary: 34 211 238; /* Cyan */
+    --accent-secondary: 244 114 182; /* Pink */
+    color-scheme: dark;
+  }
+
+  [data-theme="emerald-forest"] {
+    --app-bg: 4 16 12;
+    --card-bg: 10 28 22;
+    --hover-bg: 16 40 32;
+    --border-color: 24 56 45;
+    --border-strong: 34 77 62;
+    --text-title: 52 211 153;
+    --text-body: 236 253 245;
+    --text-sub: 110 231 183;
+    --accent-primary: 16 185 129; /* Emerald */
+    --accent-secondary: 20 184 166; /* Teal */
+    color-scheme: dark;
+  }
+
+  [data-theme="sunset-amber"] {
+    --app-bg: 18 12 8;
+    --card-bg: 30 21 15;
+    --hover-bg: 43 30 21;
+    --border-color: 59 41 29;
+    --border-strong: 78 55 39;
+    --text-title: 251 191 36;
+    --text-body: 255 247 237;
+    --text-sub: 253 230 138;
+    --accent-primary: 245 158 11; /* Amber */
+    --accent-secondary: 249 115 22; /* Orange */
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: rgb(var(--app-bg)) !important;
+    color: rgb(var(--text-body)) !important;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* ================================================
+   THEME UTILITY CLASSES
+   Defined explicitly so they always work with CSS variables,
+   regardless of Tailwind's static class detection.
+   ================================================ */
+@layer utilities {
+  /* --- Backgrounds --- */
+  .bg-theme-bg    { background-color: rgb(var(--app-bg)); }
+  .bg-theme-card  { background-color: rgb(var(--card-bg)); }
+  .bg-theme-hover { background-color: rgb(var(--hover-bg)); }
+  .bg-theme-accent { background-color: rgb(var(--accent-primary)); }
+  .bg-theme-accent-secondary { background-color: rgb(var(--accent-secondary)); }
+  .bg-theme-accent\/10 { background-color: rgb(var(--accent-primary) / 0.1); }
+  .bg-theme-accent\/15 { background-color: rgb(var(--accent-primary) / 0.15); }
+  .bg-theme-accent\/20 { background-color: rgb(var(--accent-primary) / 0.2); }
+  .bg-theme-accent\/30 { background-color: rgb(var(--accent-primary) / 0.3); }
+  .bg-theme-accent-secondary\/10 { background-color: rgb(var(--accent-secondary) / 0.1); }
+  .bg-theme-accent-secondary\/15 { background-color: rgb(var(--accent-secondary) / 0.15); }
+  .bg-theme-accent-secondary\/20 { background-color: rgb(var(--accent-secondary) / 0.2); }
+
+  /* --- Text --- */
+  .text-theme-title  { color: rgb(var(--text-title)); }
+  .text-theme-body   { color: rgb(var(--text-body)); }
+  .text-theme-sub    { color: rgb(var(--text-sub)); }
+  .text-theme-accent { color: rgb(var(--accent-primary)); }
+  .text-theme-accent-secondary { color: rgb(var(--accent-secondary)); }
+
+  /* --- Borders --- */
+  .border-theme-accent { border-color: rgb(var(--accent-primary)); }
+  .border-theme-accent-secondary { border-color: rgb(var(--accent-secondary)); }
+  .border-theme-accent\/20 { border-color: rgb(var(--accent-primary) / 0.2); }
+  .border-theme-accent\/30 { border-color: rgb(var(--accent-primary) / 0.3); }
+  .border-theme-accent\/40 { border-color: rgb(var(--accent-primary) / 0.4); }
+  .border-theme-accent\/70 { border-color: rgb(var(--accent-primary) / 0.7); }
+  .border-theme-accent-secondary\/20 { border-color: rgb(var(--accent-secondary) / 0.2); }
+  .border-theme-accent-secondary\/30 { border-color: rgb(var(--accent-secondary) / 0.3); }
+
+  /* --- Ring --- */
+  .ring-theme-accent { --tw-ring-color: rgb(var(--accent-primary)); }
+  .ring-theme-accent\/40 { --tw-ring-color: rgb(var(--accent-primary) / 0.4); }
+  .ring-theme-accent\/50 { --tw-ring-color: rgb(var(--accent-primary) / 0.5); }
+
+  /* --- Gradients --- */
+  .from-theme-accent { --tw-gradient-from: rgb(var(--accent-primary)); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent); }
+  .to-theme-accent-secondary { --tw-gradient-to: rgb(var(--accent-secondary)); }
+  .via-theme-accent-secondary { --tw-gradient-stops: var(--tw-gradient-from), rgb(var(--accent-secondary)), var(--tw-gradient-to, transparent); }
+  .from-theme-accent\/20 { --tw-gradient-from: rgb(var(--accent-primary) / 0.2); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent); }
+  .to-theme-accent-secondary\/10 { --tw-gradient-to: rgb(var(--accent-secondary) / 0.1); }
+  .via-theme-accent-secondary\/20 { --tw-gradient-stops: var(--tw-gradient-from), rgb(var(--accent-secondary) / 0.2), var(--tw-gradient-to, transparent); }
+
+  /* --- Hover states (use :is() for specificity) --- */
+  .hover\:bg-theme-accent:hover { background-color: rgb(var(--accent-primary)); }
+  .hover\:bg-theme-accent\/90:hover { background-color: rgb(var(--accent-primary) / 0.9); }
+  .hover\:bg-theme-accent\/20:hover { background-color: rgb(var(--accent-primary) / 0.2); }
+  .hover\:text-theme-accent:hover { color: rgb(var(--accent-primary)); }
+  .hover\:text-theme-title:hover  { color: rgb(var(--text-title)); }
+  .hover\:border-theme-accent:hover { border-color: rgb(var(--accent-primary)); }
+  .focus\:border-theme-accent:focus { border-color: rgb(var(--accent-primary)); }
+
+  /* --- Shadow glow accent (dynamic) --- */
+  .shadow-glow-accent {
+    box-shadow: 0 0 20px -5px rgb(var(--accent-primary) / 0.4);
+  }
+
+  /* --- Selection color --- */
+  .selection\:bg-theme-accent ::selection {
+    background-color: rgb(var(--accent-primary));
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong));
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--border-color));
+}
