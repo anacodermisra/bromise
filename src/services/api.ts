@@ -69,6 +69,14 @@ export const api = {
   updateTask: (id: string, data: any) => req<any>('PUT', `/tasks/${id}`, data),
   deleteTask: (id: string) => req<any>('DELETE', `/tasks/${id}`, {}),
 
+  // Subtasks
+  getSubtasks: (taskId: string) => req<any[]>('GET', `/tasks/${taskId}/subtasks`),
+  createSubtask: (taskId: string, data: { title: string }) => req<any>('POST', `/tasks/${taskId}/subtasks`, data),
+  updateSubtask: (taskId: string, subtaskId: string, data: { title?: string; done?: boolean }) =>
+    req<any>('PUT', `/tasks/${taskId}/subtasks/${subtaskId}`, data),
+  deleteSubtask: (taskId: string, subtaskId: string) =>
+    req<any>('DELETE', `/tasks/${taskId}/subtasks/${subtaskId}`, {}),
+
   // Plans
   getPlans: (date?: string) =>
     req<any[]>('GET', date ? `/plans?date=${date}` : '/plans'),

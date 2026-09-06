@@ -85,6 +85,18 @@ function mapCompletion(row) {
   };
 }
 
+function mapSubtask(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    title: row.title,
+    done: !!row.done,
+    position: row.position,
+    createdAt: row.created_at,
+  };
+}
+
 // ─────────────────────────────────────────
 // HEALTH & AUTH
 // ─────────────────────────────────────────
@@ -191,7 +203,10 @@ app.get('/api/tasks', requireAuth, (req, res) => {
   const tasks = db.prepare('SELECT * FROM tasks WHERE user_id=? AND archived = 0 ORDER BY created_at ASC').all(req.userId);
   const result = tasks.map(t => {
     const rec = db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(t.id, req.userId);
-    return mapTask(t, rec);
+    const subtasks = db.prepare('SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC').all(t.id, req.userId);
+    const mapped = mapTask(t, rec);
+    mapped.subtasks = subtasks.map(mapSubtask);
+    return mapped;
   });
   res.json(result);
 });
@@ -252,8 +267,57 @@ app.delete('/api/tasks/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'not found' });
   }
   const today = new Date().toISOString().split('T')[0];
+  db.prepare('DELETE FROM subtasks WHERE task_id=?').run(id);
   db.prepare("DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?").run(id, req.userId, today);
   db.prepare('UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?').run(nowISO(), id, req.userId);
+  res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────
+// SUBTASKS
+// ─────────────────────────────────────────
+app.get('/api/tasks/:taskId/subtasks', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const { taskId } = req.params;
+  const rows = db.prepare('SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC').all(taskId, userId);
+  res.json(rows.map(mapSubtask));
+});
+
+app.post('/api/tasks/:taskId/subtasks', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const { taskId } = req.params;
+  const { title } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
+  // Verify task belongs to user
+  const task = db.prepare('SELECT id FROM tasks WHERE id=? AND user_id=?').get(taskId, userId);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as m FROM subtasks WHERE task_id=? AND user_id=?').get(taskId, userId).m;
+  const id = `sub-${uid()}`;
+  const now = nowISO();
+  db.prepare('INSERT INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, taskId, userId, title.trim(), 0, maxPos + 1, now);
+  const row = db.prepare('SELECT * FROM subtasks WHERE id=?').get(id);
+  res.status(201).json(mapSubtask(row));
+});
+
+app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const { subtaskId } = req.params;
+  const existing = db.prepare('SELECT * FROM subtasks WHERE id=? AND user_id=?').get(subtaskId, userId);
+  if (!existing) return res.status(404).json({ error: 'not found' });
+  const title = req.body.title !== undefined ? req.body.title : existing.title;
+  const done = req.body.done !== undefined ? (req.body.done ? 1 : 0) : existing.done;
+  db.prepare('UPDATE subtasks SET title=?, done=? WHERE id=? AND user_id=?').run(title, done, subtaskId, userId);
+  const row = db.prepare('SELECT * FROM subtasks WHERE id=?').get(subtaskId);
+  res.json(mapSubtask(row));
+});
+
+app.delete('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const { subtaskId } = req.params;
+  const existing = db.prepare('SELECT * FROM subtasks WHERE id=? AND user_id=?').get(subtaskId, userId);
+  if (!existing) return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM subtasks WHERE id=? AND user_id=?').run(subtaskId, userId);
   res.json({ ok: true });
 });
 

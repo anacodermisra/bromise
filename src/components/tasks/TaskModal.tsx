@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import type { Task, Category, Priority } from '../../types';
-import { X, Sparkles, Repeat, CalendarClock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import type { Task, Category, Priority, SubTask } from '../../types';
+import { X, Sparkles, Repeat, CalendarClock, Plus, Trash2, CheckSquare, Square, ListChecks } from 'lucide-react';
 import { IconHelper } from '../common/IconHelper';
+import { api } from '../../services/api';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -27,6 +28,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [deadline, setDeadline] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState(false);
 
+  // Sub-tasks state
+  const [subtasks, setSubtasks] = useState<SubTask[]>([]);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [subtasksLoading, setSubtasksLoading] = useState(false);
+  const subtaskInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (initialTask) {
       setTitle(initialTask.title);
@@ -35,6 +42,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority(initialTask.priority);
       setDeadline(initialTask.deadline || '');
       setIsRecurring(!!initialTask.isRecurring);
+      // Load subtasks from embedded data or fetch
+      if (initialTask.subtasks) {
+        setSubtasks(initialTask.subtasks);
+      } else {
+        setSubtasksLoading(true);
+        api.getSubtasks(initialTask.id)
+          .then(data => setSubtasks(data))
+          .catch(() => setSubtasks([]))
+          .finally(() => setSubtasksLoading(false));
+      }
     } else {
       setTitle('');
       setNotes('');
@@ -42,7 +59,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority('medium');
       setDeadline('');
       setIsRecurring(false);
+      setSubtasks([]);
     }
+    setNewSubtaskTitle('');
   }, [initialTask, defaultCategoryId, categories, isOpen]);
 
   if (!isOpen) return null;
@@ -53,9 +72,62 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setDeadline(d.toISOString().split('T')[0]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAddSubtask = async () => {
+    const t = newSubtaskTitle.trim();
+    if (!t) return;
+    setNewSubtaskTitle('');
+    if (initialTask) {
+      // Immediately save to server if editing existing task
+      try {
+        const created = await api.createSubtask(initialTask.id, { title: t });
+        setSubtasks(prev => [...prev, created]);
+      } catch (err) {
+        console.error('Failed to create subtask', err);
+      }
+    } else {
+      // For new tasks, buffer locally. We'll save after task creation.
+      const tempSubtask: SubTask = {
+        id: `temp-${Date.now()}`,
+        taskId: '',
+        title: t,
+        done: false,
+        position: subtasks.length,
+        createdAt: new Date().toISOString(),
+      };
+      setSubtasks(prev => [...prev, tempSubtask]);
+    }
+    subtaskInputRef.current?.focus();
+  };
+
+  const handleToggleSubtask = async (subtask: SubTask) => {
+    if (initialTask) {
+      try {
+        const updated = await api.updateSubtask(initialTask.id, subtask.id, { done: !subtask.done });
+        setSubtasks(prev => prev.map(s => s.id === subtask.id ? updated : s));
+      } catch (err) {
+        console.error('Failed to toggle subtask', err);
+      }
+    } else {
+      setSubtasks(prev => prev.map(s => s.id === subtask.id ? { ...s, done: !s.done } : s));
+    }
+  };
+
+  const handleDeleteSubtask = async (subtask: SubTask) => {
+    if (initialTask && !subtask.id.startsWith('temp-')) {
+      try {
+        await api.deleteSubtask(initialTask.id, subtask.id);
+      } catch (err) {
+        console.error('Failed to delete subtask', err);
+      }
+    }
+    setSubtasks(prev => prev.filter(s => s.id !== subtask.id));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !categoryId) return;
+
+    const pendingSubtasks = subtasks.filter(s => s.id.startsWith('temp-'));
 
     if (initialTask) {
       onSave(
@@ -79,6 +151,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         initialTask.id
       );
     } else {
+      // Pass pending subtasks via a custom field for App.tsx to handle after creation
       onSave({
         title: title.trim(),
         notes: notes.trim() || undefined,
@@ -95,10 +168,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               startDate: new Date().toISOString().split('T')[0],
             }
           : undefined,
+        // @ts-ignore — extra field consumed by App.tsx onSave handler
+        _pendingSubtasks: pendingSubtasks.map(s => s.title),
       });
     }
     onClose();
   };
+
+  const doneCount = subtasks.filter(s => s.done).length;
+  const totalCount = subtasks.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
@@ -270,6 +348,92 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 }`}
               />
             </button>
+          </div>
+
+          {/* ─── SUB-TASKS ─── */}
+          <div className="space-y-3 p-4 rounded-2xl bg-dark-950 border border-dark-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <ListChecks className="w-4 h-4 text-theme-accent" />
+                <span className="text-xs font-bold text-dark-300 uppercase tracking-wider">Sub-tasks</span>
+                {totalCount > 0 && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-theme-accent/10 text-theme-accent border border-theme-accent/20">
+                    {doneCount}/{totalCount}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            {totalCount > 0 && (
+              <div className="w-full bg-dark-800 rounded-full h-1.5">
+                <div
+                  className="bg-gradient-to-r from-theme-accent to-theme-accent-secondary h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round((doneCount / totalCount) * 100)}%` }}
+                />
+              </div>
+            )}
+
+            {/* Sub-task list */}
+            {subtasksLoading ? (
+              <p className="text-[11px] text-dark-500 text-center py-2">Loading steps...</p>
+            ) : (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {subtasks.map(sub => (
+                  <div
+                    key={sub.id}
+                    className="flex items-center space-x-2 group p-2 rounded-xl hover:bg-dark-900 transition-colors"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSubtask(sub)}
+                      className="flex-shrink-0 text-dark-500 hover:text-theme-accent transition-colors"
+                    >
+                      {sub.done ? (
+                        <CheckSquare className="w-4 h-4 text-theme-accent" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                    </button>
+                    <span
+                      className={`flex-1 text-xs transition-all ${
+                        sub.done ? 'line-through text-dark-600' : 'text-dark-200'
+                      }`}
+                    >
+                      {sub.title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSubtask(sub)}
+                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-dark-600 hover:text-rose-400 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new sub-task */}
+            <div className="flex items-center space-x-2">
+              <input
+                ref={subtaskInputRef}
+                type="text"
+                placeholder="Add a step... (e.g. Research competitors)"
+                value={newSubtaskTitle}
+                onChange={e => setNewSubtaskTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
+                className="flex-1 bg-dark-900 border border-dark-800 rounded-xl px-3 py-2 text-xs text-theme-title placeholder-dark-600 focus:outline-none focus:border-theme-accent transition-colors"
+              />
+              <button
+                type="button"
+                onClick={handleAddSubtask}
+                disabled={!newSubtaskTitle.trim()}
+                className="flex-shrink-0 p-2 rounded-xl bg-theme-accent/20 hover:bg-theme-accent/30 text-theme-accent border border-theme-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="pt-2 flex items-center justify-end space-x-3">

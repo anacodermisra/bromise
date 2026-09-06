@@ -79,6 +79,17 @@ db.exec(`
     completed INTEGER NOT NULL DEFAULT 0,
     completed_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS subtasks (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    user_id TEXT,
+    title TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+  );
 `);
 
 // Safe migrations to add user_id column if upgrading existing DB
@@ -93,5 +104,23 @@ tables.forEach(table => {
     console.log(`Migration check for ${table}:`, err.message);
   }
 });
+
+// Migration: ensure subtasks table exists (for existing DBs)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subtasks (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      user_id TEXT,
+      title TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id)
+    );
+  `);
+} catch (err) {
+  console.log('Subtasks migration:', err.message);
+}
 
 module.exports = db;

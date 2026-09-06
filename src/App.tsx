@@ -12,6 +12,7 @@ import {
   getDayStats, formatDateKey, initSync, isServerOnline,
   resetData,
 } from './services/syncAdapter';
+import { api } from './services/api';
 import { initStorage } from './utils/storage';
 import type { ViewMode, Category, Task } from './types';
 import { getStoredTheme, applyTheme } from './utils/theme';
@@ -127,7 +128,18 @@ const MainAppContent: React.FC = () => {
     if (id) {
       await syncUpdateTask(id, taskData);
     } else {
-      await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
+      const created = await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
+      // Save pending sub-tasks for new tasks
+      const pending = (taskData as any)._pendingSubtasks as string[] | undefined;
+      if (pending && pending.length > 0 && created?.id) {
+        for (const title of pending) {
+          try {
+            await api.createSubtask(created.id, { title });
+          } catch (err) {
+            console.error('Failed to save pending subtask:', err);
+          }
+        }
+      }
     }
     reloadLocalData();
   };
