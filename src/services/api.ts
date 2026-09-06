@@ -3,28 +3,58 @@
  *
  * Provides a thin wrapper around the Express backend REST API.
  * Used by the sync adapter — not called directly by components.
- *
- * All requests go to /api/* — in dev Vite proxies to :3001,
- * in production Express serves everything from the same origin.
  */
 
 const BASE = '/api';
 
+export function getStoredToken(): string | null {
+  return localStorage.getItem('bromise_token');
+}
+
+export function setStoredToken(token: string | null): void {
+  if (token) {
+    localStorage.setItem('bromise_token', token);
+  } else {
+    localStorage.removeItem('bromise_token');
+  }
+}
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = {};
+  
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
   if (!res.ok) {
     const text = await res.text();
+    if (res.status === 401 && path !== '/auth/google') {
+      // Token expired or invalid — clear token
+      setStoredToken(null);
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
     throw new Error(`API ${method} ${path} → ${res.status}: ${text}`);
   }
+
   return res.json() as Promise<T>;
 }
 
 export const api = {
   health: () => req<{ status: string }>('GET', '/health'),
+
+  // Auth
+  googleAuth: (credential: string) => req<{ token: string; user: any }>('POST', '/auth/google', { credential }),
+  getMe: () => req<{ user: any }>('GET', '/auth/me'),
 
   // Categories
   getCategories: () => req<any[]>('GET', '/categories'),
@@ -61,7 +91,7 @@ export const api = {
     req<any[]>('GET', `/stats/heatmap${days ? `?days=${days}` : ''}`),
 
   // Export / Import / Reset
-  exportData: () => fetch(`${BASE}/export`).then(r => r.json()),
+  exportData: () => fetch(`${BASE}/export`, { headers: getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {} }).then(r => r.json()),
   importData: (data: any) => req<any>('POST', '/import', data),
   resetSeed: () => req<any>('POST', '/seed/reset', {}),
 };

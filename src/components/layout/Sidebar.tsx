@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import type { ViewMode, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
-import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus, Download, Share, X } from 'lucide-react';
+import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus, Download, Share, X, LogOut } from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -22,6 +23,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenNewCategoryModal,
 }) => {
   const { canInstall, isInstalled, isIOS, promptInstall } = usePWAInstall();
+  const { user, logout } = useAuth();
   const [showIOSHint, setShowIOSHint] = useState(false);
 
   const handleInstallClick = async () => {
@@ -136,6 +138,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="p-4 border-t border-dark-850 space-y-3">
+          {/* User Profile Card & Logout */}
+          {user && (
+            <div className="flex items-center justify-between p-2 rounded-xl bg-dark-850/80 border border-dark-800">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                {user.picture ? (
+                  <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-theme-accent/20 text-theme-accent flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-theme-title truncate">{user.name}</div>
+                  <div className="text-[10px] text-dark-500 truncate">{user.email}</div>
+                </div>
+              </div>
+              <button
+                onClick={logout}
+                className="text-dark-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800 transition-colors flex-shrink-0"
+                title="Log Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Install App Button */}
           {!isInstalled && (canInstall || isIOS) && (
             <button
@@ -152,10 +180,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-[10px] text-emerald-400 font-medium">App Installed</span>
             </div>
           )}
-          <div className="text-xs text-dark-500 flex items-center justify-between">
-            <span>Dark Mode Active</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="System Ready" />
-          </div>
         </div>
       </aside>
 

@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LoginPage } from './pages/LoginPage';
 import {
   syncGetCategories, syncGetTasks,
   syncGetCompletions, syncGetOrInitDailyPlan,
@@ -23,7 +26,11 @@ import { TaskModal } from './components/tasks/TaskModal';
 import { CategoryModal } from './components/tasks/CategoryModal';
 import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
 
-export const App: React.FC = () => {
+// Placeholder Google Client ID — replaced at runtime if provided in env
+const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '108264589260-dummy.apps.googleusercontent.com';
+
+const MainAppContent: React.FC = () => {
+  const { user, loading } = useAuth();
   const todayDate = formatDateKey(new Date());
 
   const [currentView, setCurrentView] = useState<ViewMode>('today');
@@ -60,19 +67,34 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     applyTheme(getStoredTheme());
-    // Init LocalStorage with seed data if first run
     initStorage();
     reloadLocalData();
 
-    // Start background server sync
-    initSync(() => {
-      setServerOnline(isServerOnline());
-      reloadLocalData(); // Refresh after reconnect drain
-    }).then(() => {
-      setServerOnline(isServerOnline());
-      reloadLocalData(); // Refresh after initial pull
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (user) {
+      initSync(() => {
+        setServerOnline(isServerOnline());
+        reloadLocalData();
+      }).then(() => {
+        setServerOnline(isServerOnline());
+        reloadLocalData();
+      });
+    }
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-dark-950 flex flex-col items-center justify-center space-y-4 text-theme-accent">
+        <div className="w-12 h-12 rounded-2xl bg-dark-900 border border-theme-accent/30 flex items-center justify-center animate-bounce shadow-glow-accent overflow-hidden p-1.5">
+          <img src="/logo.png" alt="BROMISE Logo" className="w-full h-full object-contain" />
+        </div>
+        <span className="text-xs font-semibold tracking-widest uppercase text-dark-400">Loading BROMISE...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   const stats = getDayStats(todayDate);
   const todayPlan = syncGetOrInitDailyPlan(todayDate);
@@ -142,7 +164,6 @@ export const App: React.FC = () => {
   // ─── RENDER ────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-950 text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200">
-      {/* Offline indicator */}
       {!serverOnline && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500/90 text-dark-950 text-xs font-bold text-center py-1 tracking-wide">
           ⚡ Offline mode — changes saved locally and will sync when server reconnects
@@ -262,6 +283,16 @@ export const App: React.FC = () => {
         onConfirmDelete={handleConfirmDeleteCategory}
       />
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <AuthProvider>
+        <MainAppContent />
+      </AuthProvider>
+    </GoogleOAuthProvider>
   );
 };
 

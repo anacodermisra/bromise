@@ -16,8 +16,19 @@ db.pragma('foreign_keys = ON');
 
 // Create schema
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    google_id TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    picture TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     name TEXT NOT NULL,
     icon TEXT NOT NULL DEFAULT 'Sparkles',
     accent TEXT NOT NULL DEFAULT '#8b5cf6',
@@ -29,6 +40,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     category_id TEXT NOT NULL,
     title TEXT NOT NULL,
     notes TEXT,
@@ -37,39 +49,49 @@ db.exec(`
     is_recurring INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    archived INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (category_id) REFERENCES categories(id)
+    archived INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS recurrence_rules (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     task_id TEXT NOT NULL UNIQUE,
     frequency TEXT NOT NULL DEFAULT 'daily',
     start_date TEXT NOT NULL,
     end_date TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    FOREIGN KEY (task_id) REFERENCES tasks(id)
+    active INTEGER NOT NULL DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS daily_plans (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     task_id TEXT NOT NULL,
     date TEXT NOT NULL,
     position INTEGER NOT NULL DEFAULT 0,
-    source_type TEXT NOT NULL DEFAULT 'normal',
-    UNIQUE(task_id, date),
-    FOREIGN KEY (task_id) REFERENCES tasks(id)
+    source_type TEXT NOT NULL DEFAULT 'normal'
   );
 
   CREATE TABLE IF NOT EXISTS completions (
     id TEXT PRIMARY KEY,
+    user_id TEXT,
     task_id TEXT NOT NULL,
     date TEXT NOT NULL,
     completed INTEGER NOT NULL DEFAULT 0,
-    completed_at TEXT,
-    UNIQUE(task_id, date),
-    FOREIGN KEY (task_id) REFERENCES tasks(id)
+    completed_at TEXT
   );
 `);
+
+// Safe migrations to add user_id column if upgrading existing DB
+const tables = ['categories', 'tasks', 'recurrence_rules', 'daily_plans', 'completions'];
+tables.forEach(table => {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!columns.some(col => col.name === 'user_id')) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN user_id TEXT`).run();
+    }
+  } catch (err) {
+    console.log(`Migration check for ${table}:`, err.message);
+  }
+});
 
 module.exports = db;
