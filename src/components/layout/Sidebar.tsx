@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ViewMode, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
-import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus } from 'lucide-react';
+import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus, Download, Share, X } from 'lucide-react';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 interface SidebarProps {
   currentView: ViewMode;
@@ -20,6 +21,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectCategoryFilter,
   onOpenNewCategoryModal,
 }) => {
+  const { canInstall, isInstalled, isIOS, promptInstall } = usePWAInstall();
+  const [showIOSHint, setShowIOSHint] = useState(false);
+
+  const handleInstallClick = async () => {
+    if (isIOS) {
+      setShowIOSHint(true);
+    } else {
+      await promptInstall();
+    }
+  };
   const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
     { id: 'today', label: 'Today', icon: <CalendarCheck className="w-5 h-5" /> },
     { id: 'tasks', label: 'Backlog & Tasks', icon: <CheckSquare className="w-5 h-5" /> },
@@ -124,11 +135,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <div className="p-4 border-t border-dark-850 text-xs text-dark-500 flex items-center justify-between">
-          <span>Dark Mode Active</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="System Ready" />
+        <div className="p-4 border-t border-dark-850 space-y-3">
+          {/* Install App Button */}
+          {!isInstalled && (canInstall || isIOS) && (
+            <button
+              onClick={handleInstallClick}
+              className="w-full flex items-center justify-center space-x-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-theme-accent/20 to-theme-accent-secondary/10 hover:from-theme-accent/30 hover:to-theme-accent-secondary/20 text-theme-accent border border-theme-accent/30 text-xs font-semibold transition-all duration-200 hover:shadow-glow-accent group"
+            >
+              <Download className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+              <span>Install BROMISE App</span>
+            </button>
+          )}
+          {isInstalled && (
+            <div className="flex items-center space-x-2 px-2 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+              <span className="text-[10px] text-emerald-400 font-medium">App Installed</span>
+            </div>
+          )}
+          <div className="text-xs text-dark-500 flex items-center justify-between">
+            <span>Dark Mode Active</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="System Ready" />
+          </div>
         </div>
       </aside>
+
+      {/* iOS Install Instructions Modal */}
+      {showIOSHint && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm md:items-center" onClick={() => setShowIOSHint(false)}>
+          <div className="bg-dark-900 border border-dark-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-theme-title">Install on iPhone / iPad</h3>
+              <button onClick={() => setShowIOSHint(false)} className="text-dark-500 hover:text-theme-title p-1 rounded-lg hover:bg-dark-800"><X className="w-4 h-4" /></button>
+            </div>
+            <ol className="space-y-3 text-sm text-dark-400">
+              <li className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-theme-accent/20 text-theme-accent text-xs font-bold flex items-center justify-center">1</span>
+                <span>Tap the <Share className="inline w-4 h-4 text-blue-400" /> <strong className="text-dark-200">Share</strong> button in Safari's toolbar</span>
+              </li>
+              <li className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-theme-accent/20 text-theme-accent text-xs font-bold flex items-center justify-center">2</span>
+                <span>Scroll down and tap <strong className="text-dark-200">"Add to Home Screen"</strong></span>
+              </li>
+              <li className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-theme-accent/20 text-theme-accent text-xs font-bold flex items-center justify-center">3</span>
+                <span>Tap <strong className="text-dark-200">"Add"</strong> — BROMISE will appear on your Home Screen!</span>
+              </li>
+            </ol>
+            <button onClick={() => setShowIOSHint(false)} className="mt-5 w-full py-2.5 rounded-xl bg-theme-accent text-white text-sm font-semibold hover:bg-theme-accent/90 transition-colors">Got it!</button>
+          </div>
+        </div>
+      )}
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-dark-900/95 backdrop-blur-lg border-t border-dark-800 px-2 py-2 flex items-center justify-around">
         {navItems.map(item => {
@@ -146,6 +202,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           );
         })}
+        {!isInstalled && (canInstall || isIOS) && (
+          <button
+            onClick={handleInstallClick}
+            className="flex flex-col items-center py-1.5 px-3 rounded-xl transition-all text-theme-accent bg-theme-accent/10 animate-pulse"
+            title="Install BROMISE App"
+          >
+            <Download className="w-5 h-5" />
+            <span className="text-[10px] mt-1 font-medium">Install</span>
+          </button>
+        )}
       </nav>
     </>
   );
