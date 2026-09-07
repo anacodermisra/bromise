@@ -15,6 +15,21 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 app.use(cors());
 app.use(express.json());
 
+// Set Content Security Policy headers for Google OAuth and resources
+app.use((_req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://accounts.google.com https://apis.google.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com data:; " +
+    "frame-src 'self' https://accounts.google.com; " +
+    "connect-src 'self' https://accounts.google.com https://*.turso.io https://*.onrender.com; " +
+    "img-src 'self' data: https://lh3.googleusercontent.com https://*.googleusercontent.com;"
+  );
+  next();
+});
+
 // ─────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────
