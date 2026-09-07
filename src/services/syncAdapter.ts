@@ -158,9 +158,22 @@ export async function pullFromServer() {
       api.getPlans(),
       api.getCompletions(),
     ]);
+
+    // Fetch subtasks for each task and embed them
+    const tasksWithSubtasks = await Promise.all(
+      tasks.map(async (task: any) => {
+        try {
+          const subtasks = await api.getSubtasks(task.id);
+          return { ...task, subtasks };
+        } catch {
+          return { ...task, subtasks: [] };
+        }
+      })
+    );
+
     // Overwrite LocalStorage with fresh server data
     saveCategories(cats);
-    saveTasks(tasks);
+    saveTasks(tasksWithSubtasks);
     saveDailyPlans(plans);
     saveCompletions(completions);
     _initialSyncDone = true;

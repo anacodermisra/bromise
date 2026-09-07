@@ -300,14 +300,14 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
 // SUBTASKS
 // ─────────────────────────────────────────
 app.get('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.userId;
   const { taskId } = req.params;
   const rowsResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [taskId, userId] });
   res.json(rowsResult.rows.map(mapSubtask));
 });
 
 app.post('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.userId;
   const { taskId } = req.params;
   const { title } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
@@ -325,7 +325,7 @@ app.post('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
 });
 
 app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.userId;
   const { subtaskId } = req.params;
   const existingResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
   const existing = existingResult.rows[0];
@@ -338,7 +338,7 @@ app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) 
 });
 
 app.delete('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.userId;
   const { subtaskId } = req.params;
   const existingResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
   const existing = existingResult.rows[0];

@@ -134,19 +134,18 @@ const MainAppContent: React.FC = () => {
       // Save pending sub-tasks for new tasks
       const pending = (taskData as any)._pendingSubtasks as string[] | undefined;
       if (pending && pending.length > 0 && created?.id) {
-        let addedSubtasks = false;
         for (const title of pending) {
           try {
             await api.createSubtask(created.id, { title });
-            addedSubtasks = true;
           } catch (err) {
             console.error('Failed to save pending subtask:', err);
           }
         }
-        if (addedSubtasks && serverOnline) {
-          await pullFromServer();
-        }
       }
+    }
+    // Always pull fresh data from server so subtasks are up to date
+    if (serverOnline) {
+      await pullFromServer();
     }
     reloadLocalData();
   };

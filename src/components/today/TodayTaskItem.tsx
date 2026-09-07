@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { GripVertical, Check, Repeat, ArrowRightLeft, Pencil, Trash2, CalendarClock } from 'lucide-react';
+import { GripVertical, Check, Repeat, ArrowRightLeft, Pencil, Trash2, CalendarClock, ListChecks } from 'lucide-react';
 
 interface TodayTaskItemProps {
   task: Task;
@@ -43,6 +43,13 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
 
   const deadlineStatus = getDeadlineStatus(task.deadline);
 
+  // Subtask progress
+  const subtasks = task.subtasks || [];
+  const totalSubtasks = subtasks.length;
+  const doneSubtasks = subtasks.filter(s => s.done).length;
+  const subtaskPct = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
+  const allSubtasksDone = totalSubtasks > 0 && doneSubtasks === totalSubtasks;
+
   return (
     <div
       ref={setNodeRef}
@@ -64,7 +71,7 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
 
       <button
         onClick={() => onToggleComplete(task.id)}
-        className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all duration-200 ${
+        className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
           isCompleted
             ? 'bg-emerald-500 border-emerald-500 text-dark-950 shadow-glow-emerald'
             : 'border-dark-600 hover:border-theme-accent hover:bg-theme-accent/10'
@@ -127,6 +134,35 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
             {task.notes}
           </p>
         )}
+
+        {/* Subtask progress bar */}
+        {totalSubtasks > 0 && (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className={`inline-flex items-center space-x-1 text-[10px] font-semibold ${
+                allSubtasksDone ? 'text-emerald-400' : 'text-dark-400'
+              }`}>
+                <ListChecks className="w-3 h-3" />
+                <span>{doneSubtasks}/{totalSubtasks} steps</span>
+              </span>
+              <span className={`text-[10px] font-bold tabular-nums ${
+                allSubtasksDone ? 'text-emerald-400' : 'text-theme-accent'
+              }`}>
+                {subtaskPct}%
+              </span>
+            </div>
+            <div className="w-full bg-dark-800 rounded-full h-1">
+              <div
+                className={`h-1 rounded-full transition-all duration-500 ${
+                  allSubtasksDone
+                    ? 'bg-emerald-500'
+                    : 'bg-gradient-to-r from-theme-accent to-theme-accent-secondary'
+                }`}
+                style={{ width: `${subtaskPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -157,3 +193,4 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
     </div>
   );
 };
+

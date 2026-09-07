@@ -5,7 +5,8 @@ const { randomUUID } = require('crypto');
 const db = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'bromise_secret_jwt_key_2026_change_in_prod';
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+// Sanitize GOOGLE_CLIENT_ID — strip whitespace/quotes that can cause 401 Malformed errors
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim().replace(/['"/]/g, '');
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
