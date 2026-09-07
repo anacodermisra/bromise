@@ -37,14 +37,25 @@ async function verifyGoogleTokenAndGetUser(idToken) {
     picture = decoded.picture || null;
   }
 
-  let user = db.prepare('SELECT * FROM users WHERE google_id = ?').get(googleId);
+  const userRes = await db.execute({
+    sql: 'SELECT * FROM users WHERE google_id = ?',
+    args: [googleId]
+  });
+  let user = userRes.rows[0];
 
   if (!user) {
     const userId = `usr-${uid()}`;
     const now = nowISO();
-    db.prepare('INSERT INTO users (id, google_id, email, name, picture, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(userId, googleId, email, name, picture || null, now, now);
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    await db.execute({
+      sql: 'INSERT INTO users (id, google_id, email, name, picture, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [userId, googleId, email, name, picture || null, now, now]
+    });
+    
+    const newUserRes = await db.execute({
+      sql: 'SELECT * FROM users WHERE id = ?',
+      args: [userId]
+    });
+    user = newUserRes.rows[0];
   }
 
   // Create token

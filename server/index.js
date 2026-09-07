@@ -127,8 +127,9 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 // Get Current User Profile
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  const user = db.prepare('SELECT id, email, name, picture, created_at FROM users WHERE id = ?').get(req.userId);
+app.get('/api/auth/me', requireAuth, async (req, res) => {
+  const userResult = await db.execute({ sql: 'SELECT id, email, name, picture, created_at FROM users WHERE id = ?', args: [req.userId] });
+  const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user });
 });
@@ -136,103 +137,111 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 // ─────────────────────────────────────────
 // CATEGORIES (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/categories', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM categories WHERE user_id = ? AND archived = 0 ORDER BY position ASC').all(req.userId);
-  res.json(rows.map(mapCategory));
+app.get('/api/categories', requireAuth, async (req, res) => {
+  const result = await db.execute({ sql: 'SELECT * FROM categories WHERE user_id = ? AND archived = 0 ORDER BY position ASC', args: [req.userId] });
+  res.json(result.rows.map(mapCategory));
 });
 
-app.post('/api/categories', requireAuth, (req, res) => {
+app.post('/api/categories', requireAuth, async (req, res) => {
   const { name, icon = 'Sparkles', accent = '#8b5cf6' } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
-  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as m FROM categories WHERE user_id = ?').get(req.userId).m;
+  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM categories WHERE user_id = ?', args: [req.userId] });
+  const maxPos = maxPosResult.rows[0].m;
   const id = req.body.id || `cat-${uid()}`;
   const now = nowISO();
-  db.prepare('INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(id, req.userId, name, icon, accent, maxPos + 1, now, now);
-  const row = db.prepare('SELECT * FROM categories WHERE id=? AND user_id=?').get(id, req.userId);
-  res.status(201).json(mapCategory(row));
+  await db.execute({ sql: 'INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', args: [id, req.userId, name, icon, accent, maxPos + 1, now, now] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  res.status(201).json(mapCategory(rowResult.rows[0]));
 });
 
-app.put('/api/categories/:id', requireAuth, (req, res) => {
+app.put('/api/categories/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM categories WHERE id=? AND user_id=?').get(id, req.userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'not found' });
   const now = nowISO();
   const name = req.body.name ?? existing.name;
   const icon = req.body.icon ?? existing.icon;
   const accent = req.body.accent ?? existing.accent;
   const position = req.body.position ?? existing.position;
-  db.prepare('UPDATE categories SET name=?,icon=?,accent=?,position=?,updated_at=? WHERE id=? AND user_id=?')
-    .run(name, icon, accent, position, now, id, req.userId);
-  const row = db.prepare('SELECT * FROM categories WHERE id=? AND user_id=?').get(id, req.userId);
-  res.json(mapCategory(row));
+  await db.execute({ sql: 'UPDATE categories SET name=?,icon=?,accent=?,position=?,updated_at=? WHERE id=? AND user_id=?', args: [name, icon, accent, position, now, id, req.userId] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  res.json(mapCategory(rowResult.rows[0]));
 });
 
-app.delete('/api/categories/:id', requireAuth, (req, res) => {
+app.delete('/api/categories/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { action, targetCategoryId } = req.body;
-  if (!db.prepare('SELECT id FROM categories WHERE id=? AND user_id=?').get(id, req.userId)) {
+  const checkResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  if (!checkResult.rows[0]) {
     return res.status(404).json({ error: 'not found' });
   }
   if (action === 'move' && targetCategoryId) {
-    db.prepare('UPDATE tasks SET category_id=?, updated_at=? WHERE category_id=? AND user_id=?')
-      .run(targetCategoryId, nowISO(), id, req.userId);
+    await db.execute({ sql: 'UPDATE tasks SET category_id=?, updated_at=? WHERE category_id=? AND user_id=?', args: [targetCategoryId, nowISO(), id, req.userId] });
   } else {
     // delete tasks in this category
-    const taskIds = db.prepare('SELECT id FROM tasks WHERE category_id=? AND user_id=?').all(id, req.userId).map(r => r.id);
+    const tasksResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
+    const taskIds = tasksResult.rows.map(r => r.id);
     for (const tid of taskIds) {
-      db.prepare('DELETE FROM daily_plans WHERE task_id=? AND user_id=?').run(tid, req.userId);
-      db.prepare('DELETE FROM completions WHERE task_id=? AND user_id=?').run(tid, req.userId);
-      db.prepare('DELETE FROM recurrence_rules WHERE task_id=? AND user_id=?').run(tid, req.userId);
+      await db.execute({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
+      await db.execute({ sql: 'DELETE FROM completions WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
+      await db.execute({ sql: 'DELETE FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
     }
-    db.prepare('DELETE FROM tasks WHERE category_id=? AND user_id=?').run(id, req.userId);
+    await db.execute({ sql: 'DELETE FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
   }
   const now = nowISO();
   // Re-index positions
-  const remaining = db.prepare('SELECT id FROM categories WHERE id != ? AND user_id=? ORDER BY position ASC').all(id, req.userId);
-  const reindex = db.prepare('UPDATE categories SET position=?,updated_at=? WHERE id=? AND user_id=?');
-  remaining.forEach((r, i) => reindex.run(i, now, r.id, req.userId));
-  db.prepare('DELETE FROM categories WHERE id=? AND user_id=?').run(id, req.userId);
+  const remainingResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id != ? AND user_id=? ORDER BY position ASC', args: [id, req.userId] });
+  const remaining = remainingResult.rows;
+  for (let i = 0; i < remaining.length; i++) {
+    const r = remaining[i];
+    await db.execute({ sql: 'UPDATE categories SET position=?,updated_at=? WHERE id=? AND user_id=?', args: [i, now, r.id, req.userId] });
+  }
+  await db.execute({ sql: 'DELETE FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
   res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────
 // TASKS (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/tasks', requireAuth, (req, res) => {
-  const tasks = db.prepare('SELECT * FROM tasks WHERE user_id=? AND archived = 0 ORDER BY created_at ASC').all(req.userId);
-  const result = tasks.map(t => {
-    const rec = db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(t.id, req.userId);
-    const subtasks = db.prepare('SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC').all(t.id, req.userId);
+app.get('/api/tasks', requireAuth, async (req, res) => {
+  const tasksResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=? AND archived = 0 ORDER BY created_at ASC', args: [req.userId] });
+  const tasks = tasksResult.rows;
+  const result = [];
+  for (const t of tasks) {
+    const recResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
+    const rec = recResult.rows[0];
+    const subtasksResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [t.id, req.userId] });
+    const subtasks = subtasksResult.rows;
     const mapped = mapTask(t, rec);
     mapped.subtasks = subtasks.map(mapSubtask);
-    return mapped;
-  });
+    result.push(mapped);
+  }
   res.json(result);
 });
 
-app.post('/api/tasks', requireAuth, (req, res) => {
+app.post('/api/tasks', requireAuth, async (req, res) => {
   const { title, categoryId, notes, priority = 'medium', deadline, isRecurring = false, recurrenceRule } = req.body;
   if (!title || !categoryId) return res.status(400).json({ error: 'title and categoryId required' });
   const id = req.body.id || `task-${uid()}`;
   const now = nowISO();
-  db.prepare('INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(id, req.userId, categoryId, title, notes || null, priority, deadline || null, isRecurring ? 1 : 0, now, now);
+  await db.execute({ sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', args: [id, req.userId, categoryId, title, notes || null, priority, deadline || null, isRecurring ? 1 : 0, now, now] });
   let rec = null;
   if (isRecurring) {
     const recId = (recurrenceRule && recurrenceRule.id) || `rec-${uid()}`;
     const startDate = (recurrenceRule && recurrenceRule.startDate) || now.split('T')[0];
-    db.prepare('INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)')
-      .run(recId, req.userId, id, 'daily', startDate, 1);
-    rec = db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(id, req.userId);
+    await db.execute({ sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)', args: [recId, req.userId, id, 'daily', startDate, 1] });
+    const recResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
+    rec = recResult.rows[0];
   }
-  const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(id, req.userId);
-  res.status(201).json(mapTask(task, rec));
+  const taskResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
+  res.status(201).json(mapTask(taskResult.rows[0], rec));
 });
 
-app.put('/api/tasks/:id', requireAuth, (req, res) => {
+app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(id, req.userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
+  const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'not found' });
   const now = nowISO();
   const title = req.body.title ?? existing.title;
@@ -241,136 +250,142 @@ app.put('/api/tasks/:id', requireAuth, (req, res) => {
   const priority = req.body.priority ?? existing.priority;
   const deadline = req.body.deadline !== undefined ? req.body.deadline : existing.deadline;
   const isRecurring = req.body.isRecurring !== undefined ? (req.body.isRecurring ? 1 : 0) : existing.is_recurring;
-  db.prepare('UPDATE tasks SET category_id=?,title=?,notes=?,priority=?,deadline=?,is_recurring=?,updated_at=? WHERE id=? AND user_id=?')
-    .run(categoryId, title, notes || null, priority, deadline || null, isRecurring, now, id, req.userId);
+  await db.execute({ sql: 'UPDATE tasks SET category_id=?,title=?,notes=?,priority=?,deadline=?,is_recurring=?,updated_at=? WHERE id=? AND user_id=?', args: [categoryId, title, notes || null, priority, deadline || null, isRecurring, now, id, req.userId] });
   if (req.body.recurrenceRule && isRecurring) {
     const rr = req.body.recurrenceRule;
-    const existing_rec = db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(id, req.userId);
+    const existingRecResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
+    const existing_rec = existingRecResult.rows[0];
     if (existing_rec) {
-      db.prepare('UPDATE recurrence_rules SET frequency=?,start_date=?,end_date=?,active=? WHERE task_id=? AND user_id=?')
-        .run(rr.frequency || 'daily', rr.startDate || existing_rec.start_date, rr.endDate || null, rr.active !== false ? 1 : 0, id, req.userId);
+      await db.execute({ sql: 'UPDATE recurrence_rules SET frequency=?,start_date=?,end_date=?,active=? WHERE task_id=? AND user_id=?', args: [rr.frequency || 'daily', rr.startDate || existing_rec.start_date, rr.endDate || null, rr.active !== false ? 1 : 0, id, req.userId] });
     } else {
-      db.prepare('INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)')
-        .run(`rec-${uid()}`, req.userId, id, rr.frequency || 'daily', rr.startDate || now.split('T')[0], 1);
+      await db.execute({ sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)', args: [`rec-${uid()}`, req.userId, id, rr.frequency || 'daily', rr.startDate || now.split('T')[0], 1] });
     }
   } else if (!isRecurring) {
-    db.prepare('UPDATE recurrence_rules SET active=0 WHERE task_id=? AND user_id=?').run(id, req.userId);
+    await db.execute({ sql: 'UPDATE recurrence_rules SET active=0 WHERE task_id=? AND user_id=?', args: [id, req.userId] });
   }
-  const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(id, req.userId);
-  const rec = db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(id, req.userId);
-  res.json(mapTask(task, rec));
+  const taskResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
+  const recResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
+  res.json(mapTask(taskResult.rows[0], recResult.rows[0]));
 });
 
-app.delete('/api/tasks/:id', requireAuth, (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  if (!db.prepare('SELECT id FROM tasks WHERE id=? AND user_id=?').get(id, req.userId)) {
+  const taskCheck = await db.execute({ sql: 'SELECT id FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
+  if (!taskCheck.rows[0]) {
     return res.status(404).json({ error: 'not found' });
   }
   const today = new Date().toISOString().split('T')[0];
-  db.prepare('DELETE FROM subtasks WHERE task_id=?').run(id);
-  db.prepare("DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?").run(id, req.userId, today);
-  db.prepare('UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?').run(nowISO(), id, req.userId);
+  await db.execute({ sql: 'DELETE FROM subtasks WHERE task_id=?', args: [id] });
+  await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, today] });
+  await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [nowISO(), id, req.userId] });
   res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────
 // SUBTASKS
 // ─────────────────────────────────────────
-app.get('/api/tasks/:taskId/subtasks', requireAuth, (req, res) => {
+app.get('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { taskId } = req.params;
-  const rows = db.prepare('SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC').all(taskId, userId);
-  res.json(rows.map(mapSubtask));
+  const rowsResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [taskId, userId] });
+  res.json(rowsResult.rows.map(mapSubtask));
 });
 
-app.post('/api/tasks/:taskId/subtasks', requireAuth, (req, res) => {
+app.post('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { taskId } = req.params;
   const { title } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
   // Verify task belongs to user
-  const task = db.prepare('SELECT id FROM tasks WHERE id=? AND user_id=?').get(taskId, userId);
+  const taskResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE id=? AND user_id=?', args: [taskId, userId] });
+  const task = taskResult.rows[0];
   if (!task) return res.status(404).json({ error: 'task not found' });
-  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as m FROM subtasks WHERE task_id=? AND user_id=?').get(taskId, userId).m;
+  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM subtasks WHERE task_id=? AND user_id=?', args: [taskId, userId] });
+  const maxPos = maxPosResult.rows[0].m;
   const id = `sub-${uid()}`;
   const now = nowISO();
-  db.prepare('INSERT INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, taskId, userId, title.trim(), 0, maxPos + 1, now);
-  const row = db.prepare('SELECT * FROM subtasks WHERE id=?').get(id);
-  res.status(201).json(mapSubtask(row));
+  await db.execute({ sql: 'INSERT INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)', args: [id, taskId, userId, title.trim(), 0, maxPos + 1, now] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=?', args: [id] });
+  res.status(201).json(mapSubtask(rowResult.rows[0]));
 });
 
-app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, (req, res) => {
+app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { subtaskId } = req.params;
-  const existing = db.prepare('SELECT * FROM subtasks WHERE id=? AND user_id=?').get(subtaskId, userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
+  const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'not found' });
   const title = req.body.title !== undefined ? req.body.title : existing.title;
   const done = req.body.done !== undefined ? (req.body.done ? 1 : 0) : existing.done;
-  db.prepare('UPDATE subtasks SET title=?, done=? WHERE id=? AND user_id=?').run(title, done, subtaskId, userId);
-  const row = db.prepare('SELECT * FROM subtasks WHERE id=?').get(subtaskId);
-  res.json(mapSubtask(row));
+  await db.execute({ sql: 'UPDATE subtasks SET title=?, done=? WHERE id=? AND user_id=?', args: [title, done, subtaskId, userId] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=?', args: [subtaskId] });
+  res.json(mapSubtask(rowResult.rows[0]));
 });
 
-app.delete('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, (req, res) => {
+app.delete('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) => {
   const userId = req.user.id;
   const { subtaskId } = req.params;
-  const existing = db.prepare('SELECT * FROM subtasks WHERE id=? AND user_id=?').get(subtaskId, userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
+  const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'not found' });
-  db.prepare('DELETE FROM subtasks WHERE id=? AND user_id=?').run(subtaskId, userId);
+  await db.execute({ sql: 'DELETE FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
   res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────
 // DAILY PLANS (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/plans', requireAuth, (req, res) => {
+app.get('/api/plans', requireAuth, async (req, res) => {
   const { date } = req.query;
   let rows;
   if (date) {
-    const recurringTasks = db.prepare('SELECT t.id FROM tasks t JOIN recurrence_rules r ON r.task_id=t.id WHERE t.user_id=? AND t.archived=0 AND r.active=1 AND r.start_date <= ?').all(req.userId, date);
-    const stmt = db.prepare('INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)');
-    const countStmt = db.prepare('SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?');
-    recurringTasks.forEach(t => {
-      const existing = db.prepare('SELECT id FROM daily_plans WHERE task_id=? AND date=? AND user_id=?').get(t.id, date, req.userId);
+    const recurringTasksResult = await db.execute({ sql: 'SELECT t.id FROM tasks t JOIN recurrence_rules r ON r.task_id=t.id WHERE t.user_id=? AND t.archived=0 AND r.active=1 AND r.start_date <= ?', args: [req.userId, date] });
+    const recurringTasks = recurringTasksResult.rows;
+    for (const t of recurringTasks) {
+      const existingResult = await db.execute({ sql: 'SELECT id FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [t.id, date, req.userId] });
+      const existing = existingResult.rows[0];
       if (!existing) {
-        const maxPos = countStmt.get(date, req.userId).m;
-        stmt.run(`plan-${date}-${t.id}`, req.userId, t.id, date, maxPos + 1, 'recurring');
+        const countResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
+        const maxPos = countResult.rows[0].m;
+        await db.execute({ sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)', args: [`plan-${date}-${t.id}`, req.userId, t.id, date, maxPos + 1, 'recurring'] });
       }
-    });
-    rows = db.prepare('SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC').all(date, req.userId);
+    }
+    const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC', args: [date, req.userId] });
+    rows = rowsResult.rows;
   } else {
-    rows = db.prepare('SELECT * FROM daily_plans WHERE user_id=? ORDER BY date DESC, position ASC').all(req.userId);
+    const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=? ORDER BY date DESC, position ASC', args: [req.userId] });
+    rows = rowsResult.rows;
   }
   res.json(rows.map(mapPlan));
 });
 
-app.post('/api/plans', requireAuth, (req, res) => {
+app.post('/api/plans', requireAuth, async (req, res) => {
   const { taskId, date, position, sourceType = 'normal' } = req.body;
   if (!taskId || !date) return res.status(400).json({ error: 'taskId and date required' });
-  const existing = db.prepare('SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=?').get(taskId, date, req.userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
+  const existing = existingResult.rows[0];
   if (existing) return res.json(mapPlan(existing));
-  const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?').get(date, req.userId).m;
+  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
+  const maxPos = maxPosResult.rows[0].m;
   const id = `plan-${date}-${taskId}`;
-  db.prepare('INSERT INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)')
-    .run(id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType);
-  const row = db.prepare('SELECT * FROM daily_plans WHERE id=? AND user_id=?').get(id, req.userId);
-  res.status(201).json(mapPlan(row));
+  await db.execute({ sql: 'INSERT INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)', args: [id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [id, req.userId] });
+  res.status(201).json(mapPlan(rowResult.rows[0]));
 });
 
-app.delete('/api/plans/:id', requireAuth, (req, res) => {
+app.delete('/api/plans/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  db.prepare('DELETE FROM daily_plans WHERE id=? AND user_id=?').run(id, req.userId);
+  await db.execute({ sql: 'DELETE FROM daily_plans WHERE id=? AND user_id=?', args: [id, req.userId] });
   res.json({ ok: true });
 });
 
-app.put('/api/plans/reorder', requireAuth, (req, res) => {
+app.put('/api/plans/reorder', requireAuth, async (req, res) => {
   const { date, orderedTaskIds } = req.body;
   if (!date || !Array.isArray(orderedTaskIds)) return res.status(400).json({ error: 'date and orderedTaskIds required' });
-  const stmt = db.prepare('UPDATE daily_plans SET position=? WHERE task_id=? AND date=? AND user_id=?');
-  orderedTaskIds.forEach((taskId, idx) => stmt.run(idx, taskId, date, req.userId));
-  const rows = db.prepare('SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC').all(date, req.userId);
-  res.json(rows.map(mapPlan));
+  const statements = orderedTaskIds.map((taskId, idx) => ({ sql: 'UPDATE daily_plans SET position=? WHERE task_id=? AND date=? AND user_id=?', args: [idx, taskId, date, req.userId] }));
+  await db.batch(statements, 'WRITE');
+  const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC', args: [date, req.userId] });
+  res.json(rowsResult.rows.map(mapPlan));
 });
 
 // ─────────────────────────────────────────
