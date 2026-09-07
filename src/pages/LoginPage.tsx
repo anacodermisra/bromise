@@ -81,7 +81,6 @@ export const LoginPage: React.FC = () => {
             <GoogleLogin
               onSuccess={handleGoogleSuccess}
               onError={() => setError('Google Authentication was cancelled or failed.')}
-              useOneTap
               theme="filled_black"
               shape="pill"
               size="large"

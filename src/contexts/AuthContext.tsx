@@ -8,6 +8,25 @@ export interface User {
   picture?: string;
 }
 
+const STORED_USER_KEY = 'bromise_user';
+
+export function getStoredUser(): User | null {
+  try {
+    const data = localStorage.getItem(STORED_USER_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUser(user: User | null): void {
+  if (user) {
+    localStorage.setItem(STORED_USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(STORED_USER_KEY);
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -18,19 +37,30 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    const token = getStoredToken();
+    return token ? getStoredUser() : null;
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const token = getStoredToken();
+    const storedUser = getStoredUser();
+    return Boolean(token && !storedUser);
+  });
 
   useEffect(() => {
     const token = getStoredToken();
     if (token) {
       api.getMe()
         .then(res => {
-          setUser(res.user);
+          if (res.user) {
+            setUser(res.user);
+            setStoredUser(res.user);
+          }
         })
-        .catch(() => {
-          setUser(null);
-          setStoredToken(null);
+        .catch((err: any) => {
+          console.warn('Auth verification check failed (network/server sleeping):', err.message);
+          // Do NOT clear stored token or user here! The token is valid for 30 days.
+          // Token will only be cleared if server returns 401 (via auth:unauthorized event in api.ts).
         })
         .finally(() => setLoading(false));
     } else {
@@ -39,6 +69,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const handleUnauthorized = () => {
       setUser(null);
+      setStoredUser(null);
+      setStoredToken(null);
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
@@ -49,6 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await api.googleAuth(credential);
       setStoredToken(res.token);
+      setStoredUser(res.user);
       setUser(res.user);
     } finally {
       setLoading(false);
@@ -57,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setStoredToken(null);
+    setStoredUser(null);
     setUser(null);
   };
 
@@ -74,3 +108,4 @@ export const useAuth = () => {
   }
   return context;
 };
+
