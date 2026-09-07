@@ -7,7 +7,7 @@ import { api } from '../../services/api';
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Partial<Task>, id?: string) => void;
+  onSave: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Partial<Task>, id?: string) => Promise<void> | void;
   categories: Category[];
   initialTask?: Task | null;
   defaultCategoryId?: string;
@@ -132,7 +132,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (t) pendingSubtasks.push(t);
 
     if (initialTask) {
-      onSave(
+      await onSave(
         {
           title: title.trim(),
           notes: notes.trim() || undefined,
@@ -156,7 +156,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       );
     } else {
       // Pass pending subtasks via a custom field for App.tsx to handle after creation
-      onSave({
+      await onSave({
         title: title.trim(),
         notes: notes.trim() || undefined,
         categoryId,
