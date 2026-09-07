@@ -27,8 +27,10 @@ import { TaskModal } from './components/tasks/TaskModal';
 import { CategoryModal } from './components/tasks/CategoryModal';
 import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
 
-// Google Client ID for OAuth
-const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '87073790500-4ilmlvqndgk06pj6lgbds8lar1qiq4ef.apps.googleusercontent.com';
+// Sanitize Google Client ID to prevent "401 Malformed" errors from trailing spaces or quotes in Env Vars
+let rawClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+rawClientId = rawClientId.trim().replace(/['"]/g, '');
+const GOOGLE_CLIENT_ID = rawClientId || '87073790500-4ilmlvqndgk06pj6lgbds8lar1qiq4ef.apps.googleusercontent.com';
 
 const MainAppContent: React.FC = () => {
   const { user, loading } = useAuth();
