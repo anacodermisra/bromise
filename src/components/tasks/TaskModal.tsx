@@ -127,7 +127,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     e.preventDefault();
     if (!title.trim() || !categoryId) return;
 
-    const pendingSubtasks = subtasks.filter(s => s.id.startsWith('temp-'));
+    const t = newSubtaskTitle.trim();
+    const pendingSubtasks = subtasks.filter(s => s.id.startsWith('temp-')).map(s => s.title);
+    if (t) pendingSubtasks.push(t);
 
     if (initialTask) {
       onSave(
@@ -147,6 +149,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 startDate: new Date().toISOString().split('T')[0],
               }
             : undefined,
+          // @ts-ignore
+          _pendingSubtasks: pendingSubtasks,
         },
         initialTask.id
       );
@@ -168,8 +172,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               startDate: new Date().toISOString().split('T')[0],
             }
           : undefined,
-        // @ts-ignore — extra field consumed by App.tsx onSave handler
-        _pendingSubtasks: pendingSubtasks.map(s => s.title),
+        // @ts-ignore
+        _pendingSubtasks: pendingSubtasks,
       });
     }
     onClose();
