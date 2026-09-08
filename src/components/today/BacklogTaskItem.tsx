@@ -3,7 +3,7 @@ import { useDraggable } from '@dnd-kit/core';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { GripVertical, Plus, Pencil, Trash2, CalendarClock, CheckCircle } from 'lucide-react';
+import { GripVertical, Plus, Pencil, Trash2, Repeat, CalendarClock, CheckCircle } from 'lucide-react';
 
 interface BacklogTaskItemProps {
   task: Task;
@@ -93,7 +93,12 @@ export const BacklogTaskItem: React.FC<BacklogTaskItemProps> = ({
             </span>
           )}
 
-          
+          {task.isRecurring && (
+            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-theme-accent/10 text-theme-accent border border-theme-accent/20">
+              <Repeat className="w-2.5 h-2.5" />
+              <span>Daily</span>
+            </span>
+          )}
 
           <span
             className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border uppercase tracking-wider ${

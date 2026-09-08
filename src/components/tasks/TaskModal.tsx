@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Task, Category, Priority } from '../../types';
-import { X, Sparkles, CalendarClock } from 'lucide-react';
+import { X, Sparkles, Repeat, CalendarClock } from 'lucide-react';
 import { IconHelper } from '../common/IconHelper';
 
 interface TaskModalProps {
@@ -25,6 +25,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [categoryId, setCategoryId] = useState('');
   const [priority, setPriority] = useState<Priority>('medium');
   const [deadline, setDeadline] = useState<string>('');
+  const [isRecurring, setIsRecurring] = useState(false);
 
   useEffect(() => {
     if (initialTask) {
@@ -33,12 +34,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setCategoryId(initialTask.categoryId);
       setPriority(initialTask.priority);
       setDeadline(initialTask.deadline || '');
+      setIsRecurring(!!initialTask.isRecurring);
     } else {
       setTitle('');
       setNotes('');
       setCategoryId(defaultCategoryId || (categories[0]?.id || ''));
       setPriority('medium');
       setDeadline('');
+      setIsRecurring(false);
     }
   }, [initialTask, defaultCategoryId, categories, isOpen]);
 
@@ -62,6 +65,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           categoryId,
           priority,
           deadline: deadline || undefined,
+          isRecurring,
+          recurrenceRule: isRecurring
+            ? {
+                id: initialTask.recurrenceRule?.id || `rec-${Date.now()}`,
+                taskId: initialTask.id,
+                frequency: 'daily',
+                active: true,
+                startDate: new Date().toISOString().split('T')[0],
+              }
+            : undefined,
         },
         initialTask.id
       );
@@ -72,6 +85,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         categoryId,
         priority,
         deadline: deadline || undefined,
+        isRecurring,
+        recurrenceRule: isRecurring
+          ? {
+              id: `rec-${Date.now()}`,
+              taskId: '',
+              frequency: 'daily',
+              active: true,
+              startDate: new Date().toISOString().split('T')[0],
+            }
+          : undefined,
       });
     }
     onClose();
@@ -223,7 +246,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             />
           </div>
 
-
+          {/* Recurring */}
+          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-dark-950 border border-dark-800">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-xl bg-theme-accent/10 border border-theme-accent/20 text-theme-accent flex items-center justify-center">
+                <Repeat className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-theme-title">Repeat Daily</div>
+                <div className="text-[11px] text-dark-500">Auto-instantiate in daily plan every morning</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRecurring(!isRecurring)}
+              className={`w-11 h-6 rounded-full transition-colors relative p-1 ${
+                isRecurring ? 'bg-theme-accent' : 'bg-dark-800'
+              }`}
+            >
+              <div
+                className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                  isRecurring ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
 
           <div className="pt-2 flex items-center justify-end space-x-3">
             <button

@@ -2,7 +2,7 @@ import React from 'react';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { GripVertical, CalendarClock } from 'lucide-react';
+import { GripVertical, Repeat, CalendarClock } from 'lucide-react';
 
 interface DragOverlayItemProps {
   task: Task;
@@ -51,7 +51,12 @@ export const DragOverlayItem: React.FC<DragOverlayItemProps> = ({ task, category
             </span>
           )}
 
-          
+          {task.isRecurring && (
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-theme-accent/20 text-theme-accent border border-theme-accent/30">
+              <Repeat className="w-3 h-3" />
+              <span>Daily</span>
+            </span>
+          )}
 
           <span
             className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border uppercase tracking-wider ${

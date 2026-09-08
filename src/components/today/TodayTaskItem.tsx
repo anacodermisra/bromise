@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { GripVertical, Check, ArrowRightLeft, Pencil, Trash2, CalendarClock } from 'lucide-react';
+import { GripVertical, Check, Repeat, ArrowRightLeft, Pencil, Trash2, CalendarClock } from 'lucide-react';
 
 interface TodayTaskItemProps {
   task: Task;
@@ -103,6 +103,13 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
             >
               <CalendarClock className="w-3 h-3" />
               <span>{deadlineStatus.text}</span>
+            </span>
+          )}
+
+          {task.isRecurring && (
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-theme-accent/10 text-theme-accent border border-theme-accent/20">
+              <Repeat className="w-3 h-3" />
+              <span>Daily</span>
             </span>
           )}
 

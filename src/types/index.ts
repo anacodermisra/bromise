@@ -10,6 +10,15 @@ export interface Category {
   archivedAt?: string | null;
 }
 
+export interface RecurrenceRule {
+  id: string;
+  taskId: string;
+  frequency: 'daily';
+  active: boolean;
+  startDate: string;
+  endDate?: string | null;
+}
+
 
 export interface Task {
   id: string;
@@ -18,6 +27,8 @@ export interface Task {
   categoryId: string;
   priority: Priority;
   deadline?: string | null; // Format: 'YYYY-MM-DD'
+  isRecurring?: boolean;
+  recurrenceRule?: RecurrenceRule;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
