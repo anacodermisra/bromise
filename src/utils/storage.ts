@@ -141,34 +141,7 @@ export function saveDailyPlans(plans: DailyPlanItem[]) {
 
 export function getOrInitDailyPlan(dateStr: string): DailyPlanItem[] {
   const allPlans = getDailyPlans();
-  const datePlans = allPlans.filter(p => p.date === dateStr);
-  const tasks = getTasks();
-
-  const recurringTasks = tasks.filter(
-    t => t.isRecurring && (!t.recurrenceRule || t.recurrenceRule.active)
-  );
-
-  let updated = false;
-  const newPlans = [...allPlans];
-
-  recurringTasks.forEach(recTask => {
-    const exists = datePlans.some(p => p.taskId === recTask.id);
-    if (!exists) {
-      const planItem: DailyPlanItem = {
-        id: `plan-${dateStr}-${recTask.id}`,
-        date: dateStr,
-        taskId: recTask.id,
-        position: datePlans.length,
-        sourceType: 'recurring',
-      };
-      datePlans.push(planItem);
-      newPlans.push(planItem);
-      updated = true;
-    }
-  });
-
-  if (updated) saveDailyPlans(newPlans);
-  return datePlans.sort((a, b) => a.position - b.position);
+  return allPlans.filter(p => p.date === dateStr).sort((a, b) => a.position - b.position);
 }
 
 export function addTasksToDailyPlan(dateStr: string, taskIds: string[]) {
@@ -277,11 +250,13 @@ export function getDayStats(dateStr: string) {
   const tasks = getTasks();
   const categories = getCategories();
 
-  const plannedCount = plan.length;
+  // Only count plan items that correspond to an actual existing task
+  const validPlanItems = plan.filter(item => tasks.some(t => t.id === item.taskId));
+  const plannedCount = validPlanItems.length;
   let completedCount = 0;
   const categoriesSet = new Set<string>();
 
-  plan.forEach(item => {
+  validPlanItems.forEach(item => {
     if (isTaskCompletedOnDate(item.taskId, dateStr)) completedCount++;
     const task = tasks.find(t => t.id === item.taskId);
     if (task) {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { Plus, Search, Filter, Pencil, Trash2, Repeat, ArrowUpRight, FolderPlus, CalendarClock } from 'lucide-react';
+import { Plus, Search, Filter, Pencil, Trash2, ArrowUpRight, FolderPlus, CalendarClock } from 'lucide-react';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -29,16 +29,14 @@ export const TasksView: React.FC<TasksViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
-  const [recurringOnly, setRecurringOnly] = useState(false);
   const [deadlinesOnly, setDeadlinesOnly] = useState(false);
 
   const filteredTasks = tasks.filter(task => {
     const matchesCat = activeCategoryFilter ? task.categoryId === activeCategoryFilter : true;
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) || (task.notes && task.notes.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesPriority = priorityFilter === 'all' ? true : task.priority === priorityFilter;
-    const matchesRecurring = recurringOnly ? task.isRecurring : true;
     const matchesDeadline = deadlinesOnly ? !!task.deadline : true;
-    return matchesCat && matchesSearch && matchesPriority && matchesRecurring && matchesDeadline;
+    return matchesCat && matchesSearch && matchesPriority && matchesDeadline;
   });
 
   const priorityColors = {
@@ -197,17 +195,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <span>With Deadlines</span>
             </button>
 
-            <button
-              onClick={() => setRecurringOnly(!recurringOnly)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors ${
-                recurringOnly
-                  ? 'bg-theme-accent/20 text-theme-accent border-theme-accent/40'
-                  : 'bg-dark-950 text-dark-500 border-dark-800 hover:text-theme-title'
-              }`}
-            >
-              <Repeat className="w-3.5 h-3.5" />
-              <span>Daily Recurring</span>
-            </button>
+
           </div>
         </div>
 
@@ -258,12 +246,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         </span>
                       )}
 
-                      {task.isRecurring && (
-                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-theme-accent/10 text-theme-accent border border-theme-accent/20">
-                          <Repeat className="w-3 h-3" />
-                          <span>Daily Recurring</span>
-                        </span>
-                      )}
+
 
                       <span
                         className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border uppercase tracking-wider ${

@@ -50,14 +50,8 @@ export const INITIAL_TASKS: Task[] = [
     notes: '30 mins revision on module 4 case studies',
     categoryId: 'cat-academics',
     priority: 'high',
-    isRecurring: true,
-    recurrenceRule: {
-      id: 'rec-1',
-      taskId: 'task-rec-1',
-      frequency: 'daily',
-      active: true,
-      startDate: new Date().toISOString().split('T')[0],
-    },
+    
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -67,14 +61,8 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Morning cardio & strength training session',
     categoryId: 'cat-daily',
     priority: 'high',
-    isRecurring: true,
-    recurrenceRule: {
-      id: 'rec-2',
-      taskId: 'task-rec-2',
-      frequency: 'daily',
-      active: true,
-      startDate: new Date().toISOString().split('T')[0],
-    },
+    
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -84,14 +72,8 @@ export const INITIAL_TASKS: Task[] = [
     notes: '15 mins mindfulness & breathing exercises',
     categoryId: 'cat-daily',
     priority: 'medium',
-    isRecurring: true,
-    recurrenceRule: {
-      id: 'rec-3',
-      taskId: 'task-rec-3',
-      frequency: 'daily',
-      active: true,
-      startDate: new Date().toISOString().split('T')[0],
-    },
+    
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -101,7 +83,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Complete chapter 5 exercises and lab report',
     categoryId: 'cat-academics',
     priority: 'high',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -111,7 +93,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Review neural network architectures and assignments',
     categoryId: 'cat-academics',
     priority: 'medium',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -121,7 +103,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Refresh portfolio and update project descriptions',
     categoryId: 'cat-work',
     priority: 'medium',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -131,7 +113,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Build analytics dashboard for internship project',
     categoryId: 'cat-work',
     priority: 'high',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -141,7 +123,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Plan and draft content for upcoming alumni meet post',
     categoryId: 'cat-instagram',
     priority: 'medium',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -151,7 +133,7 @@ export const INITIAL_TASKS: Task[] = [
     notes: 'Write post about current internship experience and learnings',
     categoryId: 'cat-linkedin',
     priority: 'medium',
-    isRecurring: false,
+    
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
