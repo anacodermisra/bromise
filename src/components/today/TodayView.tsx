@@ -20,6 +20,7 @@ import type { Task, Category, DayStats, DailyPlanItem } from '../../types';
 import { TodayTaskItem } from './TodayTaskItem';
 import { BacklogTaskItem } from './BacklogTaskItem';
 import { DragOverlayItem } from './DragOverlayItem';
+import { TaskCompletionModal } from './TaskCompletionModal';
 import { IconHelper } from '../common/IconHelper';
 import {
   Calendar,
@@ -105,6 +106,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [mobileActiveTab, setMobileActiveTab] = useState<'today' | 'backlog'>('today');
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [completedTaskForModal, setCompletedTaskForModal] = useState<Task | null>(null);
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
@@ -131,9 +134,18 @@ export const TodayView: React.FC<TodayViewProps> = ({
   }));
 
   const handleToggleCompleteWithConfetti = (taskId: string) => {
+    const isCurrentlyCompleted = !!completions[taskId];
     onToggleComplete(taskId);
 
-    const newCompletedCount = stats.completedCount + (completions[taskId] ? -1 : 1);
+    if (!isCurrentlyCompleted) {
+      const target = tasks.find(t => t.id === taskId);
+      if (target) {
+        setCompletedTaskForModal(target);
+        setIsCompletionModalOpen(true);
+      }
+    }
+
+    const newCompletedCount = stats.completedCount + (isCurrentlyCompleted ? -1 : 1);
     if (newCompletedCount === stats.plannedCount && stats.plannedCount > 0) {
       confetti({
         particleCount: 100,
@@ -445,6 +457,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      <TaskCompletionModal
+        isOpen={isCompletionModalOpen}
+        task={completedTaskForModal}
+        category={categories.find(c => c.id === completedTaskForModal?.categoryId)}
+        onClose={() => setIsCompletionModalOpen(false)}
+        onKeepInBacklog={() => setIsCompletionModalOpen(false)}
+        onFinishTask={(taskId) => onDeleteTask(taskId)}
+      />
     </div>
   );
 };
