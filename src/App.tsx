@@ -12,7 +12,7 @@ import {
   getDayStats, formatDateKey, initSync, isServerOnline,
   resetData, pullFromServer
 } from './services/syncAdapter';
-import { initStorage } from './utils/storage';
+import { initStorage, setActiveUser } from './utils/storage';
 import type { ViewMode, Category, Task } from './types';
 import { getStoredTheme, applyTheme } from './utils/theme';
 import { Sidebar } from './components/layout/Sidebar';
@@ -69,6 +69,7 @@ const MainAppContent: React.FC = () => {
 
   useEffect(() => {
     applyTheme(getStoredTheme());
+    setActiveUser(user ? user.id : null);
     initStorage();
     reloadLocalData();
 
@@ -80,6 +81,10 @@ const MainAppContent: React.FC = () => {
         setServerOnline(isServerOnline());
         reloadLocalData();
       });
+    } else {
+      setCategories([]);
+      setTasks([]);
+      setCompletionsMap({});
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 

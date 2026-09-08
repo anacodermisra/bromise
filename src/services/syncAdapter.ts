@@ -33,7 +33,7 @@ import {
   getCompletions, saveCompletions, toggleTaskCompletion as lsToggle,
   getDayStats, getHeatmapData, getStreakInfo,
   exportDataJSON, importDataJSON, resetToSeedData,
-  isTaskCompletedOnDate, formatDateKey,
+  isTaskCompletedOnDate, formatDateKey, getKey,
 } from '../utils/storage';
 import type { Category, Task, DailyPlanItem, TaskCompletion } from '../types';
 
@@ -62,8 +62,6 @@ async function checkServerHealth(): Promise<boolean> {
 // PENDING SYNC QUEUE
 // ─────────────────────────────────────────────────────────
 
-const QUEUE_KEY = 'bromise_sync_queue';
-
 interface SyncOp {
   id: string;
   type: string;
@@ -73,14 +71,14 @@ interface SyncOp {
 
 function getQueue(): SyncOp[] {
   try {
-    return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+    return JSON.parse(localStorage.getItem(getKey('sync_queue')) || '[]');
   } catch {
     return [];
   }
 }
 
 function saveQueue(queue: SyncOp[]) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  localStorage.setItem(getKey('sync_queue'), JSON.stringify(queue));
 }
 
 function enqueue(type: string, payload: any) {
@@ -176,7 +174,20 @@ export async function pullFromServer() {
 
 export let _healthTimer: ReturnType<typeof setInterval> | null = null;
 
+export function clearSyncState() {
+  _serverOnline = false;
+  _initialSyncDone = false;
+  if (_healthTimer) {
+    clearInterval(_healthTimer);
+    _healthTimer = null;
+  }
+}
+
 export async function initSync(onStateChange?: () => void) {
+  if (_healthTimer) {
+    clearInterval(_healthTimer);
+    _healthTimer = null;
+  }
   _serverOnline = await checkServerHealth();
 
   if (_serverOnline) {

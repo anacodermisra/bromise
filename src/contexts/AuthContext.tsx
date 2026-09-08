@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api, getStoredToken, setStoredToken } from '../services/api';
+import { setActiveUser } from '../utils/storage';
+import { clearSyncState } from '../services/syncAdapter';
 
 export interface User {
   id: string;
@@ -39,7 +41,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const token = getStoredToken();
-    return token ? getStoredUser() : null;
+    const storedUser = token ? getStoredUser() : null;
+    if (storedUser) {
+      setActiveUser(storedUser.id);
+    } else {
+      setActiveUser(null);
+    }
+    return storedUser;
   });
   const [loading, setLoading] = useState<boolean>(() => {
     const token = getStoredToken();
@@ -53,14 +61,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       api.getMe()
         .then(res => {
           if (res.user) {
+            setActiveUser(res.user.id);
             setUser(res.user);
             setStoredUser(res.user);
           }
         })
         .catch((err: any) => {
           console.warn('Auth verification check failed (network/server sleeping):', err.message);
-          // Do NOT clear stored token or user here! The token is valid for 30 days.
-          // Token will only be cleared if server returns 401 (via auth:unauthorized event in api.ts).
         })
         .finally(() => setLoading(false));
     } else {
@@ -68,6 +75,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const handleUnauthorized = () => {
+      clearSyncState();
+      setActiveUser(null);
       setUser(null);
       setStoredUser(null);
       setStoredToken(null);
@@ -80,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const res = await api.googleAuth(credential);
+      setActiveUser(res.user.id);
       setStoredToken(res.token);
       setStoredUser(res.user);
       setUser(res.user);
@@ -89,6 +99,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    clearSyncState();
+    setActiveUser(null);
     setStoredToken(null);
     setStoredUser(null);
     setUser(null);

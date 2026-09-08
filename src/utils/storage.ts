@@ -1,26 +1,51 @@
 import type { Category, Task, DailyPlanItem, TaskCompletion } from '../types';
-import { INITIAL_CATEGORIES, INITIAL_TASKS, formatDateKey } from './seedData';
+import { formatDateKey } from './seedData';
 
 export { formatDateKey };
 
-const KEYS = {
-  CATEGORIES: 'bromise_categories',
-  TASKS: 'bromise_tasks',
-  DAILY_PLANS: 'bromise_daily_plans',
-  COMPLETIONS: 'bromise_completions',
-};
+let _activeUserId: string | null = null;
+
+export function setActiveUser(userId: string | null) {
+  _activeUserId = userId;
+  cleanupLegacyStorageKeys();
+}
+
+export function getActiveUserId(): string | null {
+  return _activeUserId;
+}
+
+export function cleanupLegacyStorageKeys() {
+  const legacyKeys = [
+    'bromise_categories',
+    'bromise_tasks',
+    'bromise_daily_plans',
+    'bromise_completions',
+    'bromise_sync_queue',
+    'bromise_account_created',
+  ];
+  legacyKeys.forEach(k => localStorage.removeItem(k));
+}
+
+export function getKey(subKey: string): string {
+  if (_activeUserId) {
+    return `bromise_user_${_activeUserId}_${subKey}`;
+  }
+  return `bromise_guest_${subKey}`;
+}
 
 // ─────────────────────────────────────────────────────────────
-// INIT — Only categories and tasks seeded; NO fake history
+// INIT
 // ─────────────────────────────────────────────────────────────
 export function initStorage() {
-  if (!localStorage.getItem(KEYS.CATEGORIES)) {
-    localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(INITIAL_CATEGORIES));
+  cleanupLegacyStorageKeys();
+  const catKey = getKey('categories');
+  const taskKey = getKey('tasks');
+  if (localStorage.getItem(catKey) === null) {
+    localStorage.setItem(catKey, JSON.stringify([]));
   }
-  if (!localStorage.getItem(KEYS.TASKS)) {
-    localStorage.setItem(KEYS.TASKS, JSON.stringify(INITIAL_TASKS));
+  if (localStorage.getItem(taskKey) === null) {
+    localStorage.setItem(taskKey, JSON.stringify([]));
   }
-  // Daily plans and completions start empty — only genuine user data
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -28,17 +53,17 @@ export function initStorage() {
 // ─────────────────────────────────────────────────────────────
 export function getCategories(): Category[] {
   try {
-    const data = localStorage.getItem(KEYS.CATEGORIES);
-    if (!data) return INITIAL_CATEGORIES;
+    const data = localStorage.getItem(getKey('categories'));
+    if (!data) return [];
     const cats: Category[] = JSON.parse(data);
     return cats.sort((a, b) => a.position - b.position);
   } catch {
-    return INITIAL_CATEGORIES;
+    return [];
   }
 }
 
 export function saveCategories(categories: Category[]) {
-  localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(categories));
+  localStorage.setItem(getKey('categories'), JSON.stringify(categories));
 }
 
 export function addCategory(category: Omit<Category, 'id' | 'createdAt' | 'position'>): Category {
@@ -82,16 +107,16 @@ export function deleteCategory(id: string, action: 'move' | 'delete', targetCate
 // ─────────────────────────────────────────────────────────────
 export function getTasks(): Task[] {
   try {
-    const data = localStorage.getItem(KEYS.TASKS);
-    if (!data) return INITIAL_TASKS;
+    const data = localStorage.getItem(getKey('tasks'));
+    if (!data) return [];
     return JSON.parse(data);
   } catch {
-    return INITIAL_TASKS;
+    return [];
   }
 }
 
 export function saveTasks(tasks: Task[]) {
-  localStorage.setItem(KEYS.TASKS, JSON.stringify(tasks));
+  localStorage.setItem(getKey('tasks'), JSON.stringify(tasks));
 }
 
 export function addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Task {
@@ -117,7 +142,6 @@ export function updateTask(id: string, updates: Partial<Task>): Task[] {
 export function deleteTask(id: string) {
   const tasks = getTasks().filter(t => t.id !== id);
   saveTasks(tasks);
-  // Remove only future plans — preserve historical plans for analytics accuracy
   const today = formatDateKey(new Date());
   const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date > today));
   saveDailyPlans(plans);
@@ -128,7 +152,7 @@ export function deleteTask(id: string) {
 // ─────────────────────────────────────────────────────────────
 export function getDailyPlans(): DailyPlanItem[] {
   try {
-    const data = localStorage.getItem(KEYS.DAILY_PLANS);
+    const data = localStorage.getItem(getKey('daily_plans'));
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -136,7 +160,7 @@ export function getDailyPlans(): DailyPlanItem[] {
 }
 
 export function saveDailyPlans(plans: DailyPlanItem[]) {
-  localStorage.setItem(KEYS.DAILY_PLANS, JSON.stringify(plans));
+  localStorage.setItem(getKey('daily_plans'), JSON.stringify(plans));
 }
 
 export function getOrInitDailyPlan(dateStr: string): DailyPlanItem[] {
@@ -224,7 +248,7 @@ export function reorderDailyPlan(dateStr: string, reorderedTaskIds: string[]) {
 // ─────────────────────────────────────────────────────────────
 export function getCompletions(): TaskCompletion[] {
   try {
-    const data = localStorage.getItem(KEYS.COMPLETIONS);
+    const data = localStorage.getItem(getKey('completions'));
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -232,7 +256,7 @@ export function getCompletions(): TaskCompletion[] {
 }
 
 export function saveCompletions(completions: TaskCompletion[]) {
-  localStorage.setItem(KEYS.COMPLETIONS, JSON.stringify(completions));
+  localStorage.setItem(getKey('completions'), JSON.stringify(completions));
 }
 
 export function toggleTaskCompletion(taskId: string, dateStr: string): boolean {
@@ -268,16 +292,13 @@ export function isTaskCompletedOnDate(taskId: string, dateStr: string): boolean 
 }
 
 // ─────────────────────────────────────────────────────────────
-// STATS — computed purely from real plan & completion records
+// STATS
 // ─────────────────────────────────────────────────────────────
 export function getDayStats(dateStr: string) {
-  // Use the raw plan for this date (don't auto-insert recurring tasks here,
-  // that would inflate plannedCount and break the "0 of 2" counter display)
   const plan = getDailyPlans().filter(p => p.date === dateStr);
   const tasks = getTasks();
   const categories = getCategories();
 
-  // Only count plan items that correspond to an actual existing task
   const validPlanItems = plan.filter(item => tasks.some(t => t.id === item.taskId));
   const plannedCount = validPlanItems.length;
   let completedCount = 0;
@@ -324,7 +345,7 @@ export function getAccountStartDate(): string {
     if (c.date) dates.push(c.date);
   }
 
-  const saved = localStorage.getItem('bromise_account_created');
+  const saved = localStorage.getItem(getKey('account_created'));
   if (saved) dates.push(saved);
 
   dates.sort();
@@ -335,7 +356,7 @@ export function getAccountStartDate(): string {
   }
 
   if (!saved) {
-    localStorage.setItem('bromise_account_created', earliest);
+    localStorage.setItem(getKey('account_created'), earliest);
   }
 
   return earliest;
@@ -481,10 +502,10 @@ export function importDataJSON(jsonStr: string): boolean {
   try {
     const parsed = JSON.parse(jsonStr);
     if (parsed.categories && parsed.tasks) {
-      localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(parsed.categories));
-      localStorage.setItem(KEYS.TASKS, JSON.stringify(parsed.tasks));
-      if (parsed.dailyPlans) localStorage.setItem(KEYS.DAILY_PLANS, JSON.stringify(parsed.dailyPlans));
-      if (parsed.completions) localStorage.setItem(KEYS.COMPLETIONS, JSON.stringify(parsed.completions));
+      saveCategories(parsed.categories);
+      saveTasks(parsed.tasks);
+      if (parsed.dailyPlans) saveDailyPlans(parsed.dailyPlans);
+      if (parsed.completions) saveCompletions(parsed.completions);
       return true;
     }
     return false;
@@ -494,6 +515,7 @@ export function importDataJSON(jsonStr: string): boolean {
 }
 
 export function resetToSeedData() {
-  Object.values(KEYS).forEach(key => localStorage.removeItem(key));
+  const keys = ['categories', 'tasks', 'daily_plans', 'completions', 'account_created'];
+  keys.forEach(k => localStorage.removeItem(getKey(k)));
   initStorage();
 }
