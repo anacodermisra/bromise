@@ -497,10 +497,27 @@ app.get('/api/stats/streak', requireAuth, (req, res) => {
 });
 
 app.get('/api/stats/heatmap', requireAuth, (req, res) => {
-  const days = parseInt(req.query.days || '364', 10);
+  const { startDate, endDate, days } = req.query;
+
+  if (startDate && endDate) {
+    const result = [];
+    const curr = new Date(startDate);
+    const end = new Date(endDate);
+    while (curr <= end) {
+      const dateStr = curr.toISOString().split('T')[0];
+      const planned = db.prepare('SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?').get(dateStr, req.userId).c;
+      const completed = db.prepare('SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1').get(dateStr, req.userId).c;
+      const percentage = planned > 0 ? Math.round((completed / planned) * 100) : 0;
+      result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
+      curr.setDate(curr.getDate() + 1);
+    }
+    return res.json(result);
+  }
+
+  const daysCount = parseInt(days || '364', 10);
   const result = [];
   const today = new Date();
-  for (let i = days - 1; i >= 0; i--) {
+  for (let i = daysCount - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
@@ -510,6 +527,24 @@ app.get('/api/stats/heatmap', requireAuth, (req, res) => {
     result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
   }
   res.json(result);
+});
+
+app.get('/api/stats/account-start', requireAuth, (req, res) => {
+  const earliestTask = db.prepare('SELECT MIN(created_at) as m FROM tasks WHERE user_id=?').get(req.userId)?.m;
+  const earliestCat = db.prepare('SELECT MIN(created_at) as m FROM categories WHERE user_id=?').get(req.userId)?.m;
+  const earliestPlan = db.prepare('SELECT MIN(date) as m FROM daily_plans WHERE user_id=?').get(req.userId)?.m;
+  const earliestComp = db.prepare('SELECT MIN(date) as m FROM completions WHERE user_id=?').get(req.userId)?.m;
+
+  let earliest = [earliestTask, earliestCat, earliestPlan, earliestComp]
+    .filter(Boolean)
+    .map(d => String(d).split('T')[0])
+    .sort()[0];
+
+  if (!earliest) {
+    earliest = new Date().toISOString().split('T')[0];
+  }
+
+  res.json({ startDate: earliest });
 });
 
 // ─────────────────────────────────────────

@@ -60,6 +60,10 @@ export interface DayStats {
   categoriesRepresented: string[];
 }
 
+export interface HeatmapItem extends DayStats {
+  isPadding?: boolean;
+}
+
 export interface StreakInfo {
   currentStreak: number;
   bestStreak: number;

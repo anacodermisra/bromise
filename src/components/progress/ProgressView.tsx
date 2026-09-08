@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
-import { getHeatmapData, getStreakInfo, getDayStats, formatDateKey } from '../../utils/storage';
-import type { Category, Task } from '../../types';
+import { getHeatmapDataRange, getAccountStartDate, getStreakInfo, getDayStats, formatDateKey } from '../../utils/storage';
+import type { Category, Task, HeatmapItem } from '../../types';
 import { Flame, Trophy, CheckCircle2, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import { IconHelper } from '../common/IconHelper';
 
@@ -10,14 +10,107 @@ interface ProgressViewProps {
   tasks: Task[];
 }
 
+type ViewPreset = 'month' | 'last_month' | '6_months' | 'year' | 'all_time';
+
 export const ProgressView: React.FC<ProgressViewProps> = ({ categories, tasks }) => {
   const [weekOffset, setWeekOffset] = useState<number>(0);
-  const [hoveredDay, setHoveredDay] = useState<{ date: string; pct: number; planned: number; completed: number } | null>(null);
+  const [viewPreset, setViewPreset] = useState<ViewPreset>('year');
+  const [periodOffset, setPeriodOffset] = useState<number>(0);
+  const [hoveredDay, setHoveredDay] = useState<HeatmapItem | null>(null);
 
   const streakInfo = getStreakInfo();
-  const heatmapDays = getHeatmapData(364);
+  const accountStart = getAccountStartDate();
 
-  const getHeatmapColor = (pct: number, planned: number) => {
+  // Compute date range based on viewPreset and periodOffset
+  const getHeatmapPeriod = () => {
+    const today = new Date();
+
+    let startDateStr = '';
+    let endDateStr = '';
+    let rangeTitle = '';
+
+    if (viewPreset === 'month' || viewPreset === 'last_month') {
+      const effectiveOffset = viewPreset === 'last_month' ? periodOffset + 1 : periodOffset;
+      const targetMonthDate = new Date(today.getFullYear(), today.getMonth() - effectiveOffset, 1);
+      const year = targetMonthDate.getFullYear();
+      const month = targetMonthDate.getMonth();
+
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+
+      startDateStr = formatDateKey(firstDay);
+      endDateStr = formatDateKey(lastDay);
+      rangeTitle = firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
+    } else if (viewPreset === '6_months') {
+      const endMonthDate = new Date(today.getFullYear(), today.getMonth() - periodOffset, 1);
+      const endYear = endMonthDate.getFullYear();
+      const endMonth = endMonthDate.getMonth();
+
+      const lastDay = periodOffset === 0 ? today : new Date(endYear, endMonth + 1, 0);
+      const firstDay = new Date(endYear, endMonth - 5, 1);
+
+      startDateStr = formatDateKey(firstDay);
+      endDateStr = formatDateKey(lastDay);
+
+      const startLabel = firstDay.toLocaleString('default', { month: 'short', year: 'numeric' });
+      const endLabel = endMonthDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+      rangeTitle = `${startLabel} – ${endLabel}`;
+    } else if (viewPreset === 'year') {
+      const endMonthDate = new Date(today.getFullYear(), today.getMonth() - periodOffset, 1);
+      const endYear = endMonthDate.getFullYear();
+      const endMonth = endMonthDate.getMonth();
+
+      const lastDay = periodOffset === 0 ? today : new Date(endYear, endMonth + 1, 0);
+      const firstDay = new Date(endYear, endMonth - 11, 1);
+
+      startDateStr = formatDateKey(firstDay);
+      endDateStr = formatDateKey(lastDay);
+
+      const startLabel = firstDay.toLocaleString('default', { month: 'short', year: 'numeric' });
+      const endLabel = endMonthDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+      rangeTitle = `${startLabel} – ${endLabel}`;
+    } else if (viewPreset === 'all_time') {
+      if (periodOffset === 0) {
+        startDateStr = accountStart;
+        endDateStr = formatDateKey(today);
+        const startYear = accountStart.substring(0, 4);
+        const currentYear = today.getFullYear().toString();
+        rangeTitle = startYear === currentYear ? `All Time (${startYear})` : `All Time (${startYear} – ${currentYear})`;
+      } else {
+        const endYear = today.getFullYear() - periodOffset;
+        const firstDay = new Date(endYear, 0, 1);
+        const lastDay = new Date(endYear, 11, 31);
+        const candidateStart = formatDateKey(firstDay);
+        startDateStr = candidateStart < accountStart ? accountStart : candidateStart;
+        endDateStr = formatDateKey(lastDay);
+        rangeTitle = `Year ${endYear}`;
+      }
+    }
+
+    return { startDateStr, endDateStr, rangeTitle };
+  };
+
+  const { startDateStr, endDateStr, rangeTitle } = getHeatmapPeriod();
+  const heatmapDays = getHeatmapDataRange(startDateStr, endDateStr);
+
+  const isNextDisabled = periodOffset === 0;
+  const isPrevDisabled = startDateStr <= accountStart;
+
+  const handlePrevPeriod = () => {
+    if (!isPrevDisabled) setPeriodOffset(prev => prev + 1);
+  };
+
+  const handleNextPeriod = () => {
+    if (!isNextDisabled) setPeriodOffset(prev => Math.max(0, prev - 1));
+  };
+
+  const handlePresetChange = (preset: ViewPreset) => {
+    setViewPreset(preset);
+    setPeriodOffset(0);
+  };
+
+  const getHeatmapColor = (pct: number, planned: number, isPadding?: boolean) => {
+    if (isPadding) return 'transparent';
     if (planned === 0) return 'rgb(var(--border-color))';
     if (pct === 0) return 'rgb(var(--border-strong))';
     if (pct < 40) return '#064e3b';
@@ -127,12 +220,117 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ categories, tasks })
         </div>
       </div>
 
-      <div className="p-6 rounded-3xl bg-dark-900 border border-dark-800 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="p-6 rounded-3xl bg-dark-900 border border-dark-800 space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h3 className="text-lg font-bold text-theme-title font-sans">Activity Heatmap (Past 12 Months)</h3>
-            <p className="text-xs text-dark-500">Hover over any tile to view date & completion percentage.</p>
+            <div className="flex items-center space-x-2">
+              <h3 className="text-lg font-bold text-theme-title font-sans">Activity Heatmap</h3>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-theme-accent/15 text-theme-accent border border-theme-accent/30">
+                {rangeTitle}
+              </span>
+            </div>
+            <p className="text-xs text-dark-500 mt-0.5">
+              Account active since <strong className="text-dark-300">{accountStart}</strong> • Hover over tiles for details
+            </p>
           </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-1 bg-dark-950 p-1 rounded-xl border border-dark-800">
+              <button
+                onClick={handlePrevPeriod}
+                disabled={isPrevDisabled}
+                className="p-1.5 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                title="Earlier period"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-xs font-bold text-dark-300 px-2 min-w-[90px] text-center select-none">
+                {rangeTitle}
+              </span>
+              <button
+                onClick={handleNextPeriod}
+                disabled={isNextDisabled}
+                className="p-1.5 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                title="Later period"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center bg-dark-950 p-1 rounded-xl border border-dark-800 space-x-1 text-xs font-medium overflow-x-auto">
+              <button
+                onClick={() => handlePresetChange('month')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${viewPreset === 'month' ? 'bg-theme-accent text-white font-bold shadow' : 'text-dark-400 hover:text-theme-title'}`}
+              >
+                Current Month
+              </button>
+              <button
+                onClick={() => handlePresetChange('last_month')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${viewPreset === 'last_month' ? 'bg-theme-accent text-white font-bold shadow' : 'text-dark-400 hover:text-theme-title'}`}
+              >
+                Last Month
+              </button>
+              <button
+                onClick={() => handlePresetChange('6_months')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${viewPreset === '6_months' ? 'bg-theme-accent text-white font-bold shadow' : 'text-dark-400 hover:text-theme-title'}`}
+              >
+                Past 6 Months
+              </button>
+              <button
+                onClick={() => handlePresetChange('year')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${viewPreset === 'year' ? 'bg-theme-accent text-white font-bold shadow' : 'text-dark-400 hover:text-theme-title'}`}
+              >
+                Last Year
+              </button>
+              <button
+                onClick={() => handlePresetChange('all_time')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${viewPreset === 'all_time' ? 'bg-theme-accent text-white font-bold shadow' : 'text-dark-400 hover:text-theme-title'}`}
+              >
+                All Time
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-start space-x-2 overflow-x-auto pb-2 scrollbar-none">
+          <div className="grid grid-rows-7 gap-1.5 text-[10px] font-semibold text-dark-500 pt-0.5 select-none shrink-0">
+            <span className="h-3.5 leading-3.5">Sun</span>
+            <span className="h-3.5 leading-3.5">Mon</span>
+            <span className="h-3.5 leading-3.5">Tue</span>
+            <span className="h-3.5 leading-3.5">Wed</span>
+            <span className="h-3.5 leading-3.5">Thu</span>
+            <span className="h-3.5 leading-3.5">Fri</span>
+            <span className="h-3.5 leading-3.5">Sat</span>
+          </div>
+
+          <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 min-w-[300px]">
+            {heatmapDays.map((day, idx) => (
+              day.isPadding ? (
+                <div key={`pad-${idx}`} className="w-3.5 h-3.5 rounded-sm opacity-0 pointer-events-none" />
+              ) : (
+                <div
+                  key={day.date}
+                  onMouseEnter={() => setHoveredDay(day)}
+                  onMouseLeave={() => setHoveredDay(null)}
+                  className="w-3.5 h-3.5 rounded-sm transition-transform hover:scale-125 cursor-pointer relative"
+                  style={{ backgroundColor: getHeatmapColor(day.percentage, day.plannedCount, day.isPadding) }}
+                />
+              )
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <div className="h-6 text-xs text-dark-400 font-medium">
+            {hoveredDay && !hoveredDay.isPadding ? (
+              <span className="text-theme-accent">
+                📅 <strong>{hoveredDay.date}</strong> — Completion: <strong>{hoveredDay.percentage}%</strong> ({hoveredDay.completedCount}/{hoveredDay.plannedCount} tasks)
+              </span>
+            ) : (
+              <span className="text-dark-500 italic">Hover over any day tile for details...</span>
+            )}
+          </div>
+
           <div className="flex items-center space-x-2 text-[11px] text-dark-500">
             <span>Low</span>
             <div className="flex space-x-1">
@@ -144,37 +342,6 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ categories, tasks })
             </div>
             <span>High</span>
           </div>
-        </div>
-
-        <div className="overflow-x-auto pb-2 scrollbar-none">
-          <div className="inline-grid grid-rows-7 grid-flow-col gap-1.5 min-w-[700px]">
-            {heatmapDays.map((day) => (
-              <div
-                key={day.date}
-                onMouseEnter={() =>
-                  setHoveredDay({
-                    date: day.date,
-                    pct: day.percentage,
-                    planned: day.plannedCount,
-                    completed: day.completedCount,
-                  })
-                }
-                onMouseLeave={() => setHoveredDay(null)}
-                className="w-3.5 h-3.5 rounded-sm transition-transform hover:scale-125 cursor-pointer relative"
-                style={{ backgroundColor: getHeatmapColor(day.percentage, day.plannedCount) }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="h-6 text-xs text-dark-400 font-medium">
-          {hoveredDay ? (
-            <span className="text-theme-accent">
-              📅 <strong>{hoveredDay.date}</strong> — Completion: <strong>{hoveredDay.pct}%</strong> ({hoveredDay.completed}/{hoveredDay.planned} tasks)
-            </span>
-          ) : (
-            <span className="text-dark-500 italic">Hover over any day tile for details...</span>
-          )}
         </div>
       </div>
 

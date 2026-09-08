@@ -303,20 +303,111 @@ export function getDayStats(dateStr: string) {
   };
 }
 
-export function getHeatmapData(daysCount = 365) {
-  const today = new Date();
+export function getAccountStartDate(): string {
+  const tasks = getTasks();
+  const plans = getDailyPlans();
+  const completions = getCompletions();
+  const categories = getCategories();
+
+  const dates: string[] = [];
+
+  for (const t of tasks) {
+    if (t.createdAt) dates.push(t.createdAt.split('T')[0]);
+  }
+  for (const c of categories) {
+    if (c.createdAt) dates.push(c.createdAt.split('T')[0]);
+  }
+  for (const p of plans) {
+    if (p.date) dates.push(p.date);
+  }
+  for (const c of completions) {
+    if (c.date) dates.push(c.date);
+  }
+
+  const saved = localStorage.getItem('bromise_account_created');
+  if (saved) dates.push(saved);
+
+  dates.sort();
+
+  let earliest = dates[0];
+  if (!earliest) {
+    earliest = formatDateKey(new Date());
+  }
+
+  if (!saved) {
+    localStorage.setItem('bromise_account_created', earliest);
+  }
+
+  return earliest;
+}
+
+export interface HeatmapItem {
+  date: string;
+  plannedCount: number;
+  completedCount: number;
+  percentage: number;
+  categoriesRepresented: string[];
+  isPadding?: boolean;
+}
+
+export function getHeatmapDataRange(startDateStr: string, endDateStr: string): HeatmapItem[] {
   const allPlans = getDailyPlans();
   const datesWithPlans = new Set(allPlans.map(p => p.date));
 
-  return Array.from({ length: daysCount }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (daysCount - 1 - i));
-    const dateStr = formatDateKey(d);
+  const startParts = startDateStr.split('-').map(Number);
+  const endParts = endDateStr.split('-').map(Number);
+
+  const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+  const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+
+  const items: HeatmapItem[] = [];
+
+  const startDayOfWeek = start.getDay();
+  for (let p = 0; p < startDayOfWeek; p++) {
+    items.push({
+      date: `pad-start-${p}`,
+      plannedCount: 0,
+      completedCount: 0,
+      percentage: 0,
+      categoriesRepresented: [],
+      isPadding: true,
+    });
+  }
+
+  const curr = new Date(start);
+  while (curr <= end) {
+    const dateStr = formatDateKey(curr);
     if (!datesWithPlans.has(dateStr)) {
-      return { date: dateStr, plannedCount: 0, completedCount: 0, percentage: 0, categoriesRepresented: [] };
+      items.push({ date: dateStr, plannedCount: 0, completedCount: 0, percentage: 0, categoriesRepresented: [] });
+    } else {
+      items.push(getDayStats(dateStr));
     }
-    return getDayStats(dateStr);
-  });
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  const remainder = items.length % 7;
+  if (remainder !== 0) {
+    const needPad = 7 - remainder;
+    for (let p = 0; p < needPad; p++) {
+      items.push({
+        date: `pad-end-${p}`,
+        plannedCount: 0,
+        completedCount: 0,
+        percentage: 0,
+        categoriesRepresented: [],
+        isPadding: true,
+      });
+    }
+  }
+
+  return items;
+}
+
+export function getHeatmapData(daysCount = 365): HeatmapItem[] {
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - (daysCount - 1));
+  return getHeatmapDataRange(formatDateKey(start), formatDateKey(today));
 }
 
 export function getStreakInfo() {
