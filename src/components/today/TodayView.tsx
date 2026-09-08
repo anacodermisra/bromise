@@ -144,7 +144,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
     if (!isCurrentlyCompleted) {
       const target = tasks.find(t => t.id === taskId);
-      if (target) {
+      if (target && !target.isRecurring) {
         setCompletedTaskForModal(target);
         setIsCompletionModalOpen(true);
       }
