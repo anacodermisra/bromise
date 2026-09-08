@@ -140,7 +140,7 @@ export function updateTask(id: string, updates: Partial<Task>): Task[] {
 }
 
 export function deleteTask(id: string) {
-  const tasks = getTasks().filter(t => t.id !== id);
+  const tasks = getTasks().map(t => t.id === id ? { ...t, archivedAt: new Date().toISOString() } : t);
   saveTasks(tasks);
   const today = formatDateKey(new Date());
   const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date > today));

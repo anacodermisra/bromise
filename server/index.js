@@ -220,7 +220,7 @@ app.delete('/api/categories/:id', requireAuth, async (req, res) => {
 // TASKS (USER PROTECTED)
 // ─────────────────────────────────────────
 app.get('/api/tasks', requireAuth, async (req, res) => {
-  const tasksResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=? AND archived = 0 ORDER BY created_at ASC', args: [req.userId] });
+  const tasksResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=? ORDER BY created_at ASC', args: [req.userId] });
   const tasks = tasksResult.rows;
   const result = [];
   for (const t of tasks) {

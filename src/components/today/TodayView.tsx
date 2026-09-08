@@ -31,6 +31,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -46,6 +47,7 @@ interface TodayViewProps {
   onReorderToday: (taskIds: string[]) => void;
   onOpenTaskModal: (task?: Task) => void;
   onDeleteTask: (taskId: string) => void;
+  onChangeDate?: (date: string) => void;
 }
 
 const TodayDropZoneContainer: React.FC<{ children: React.ReactNode; isMobileHidden: boolean }> = ({
@@ -89,6 +91,7 @@ const BacklogDropZoneContainer: React.FC<{ children: React.ReactNode; isMobileHi
 };
 
 export const TodayView: React.FC<TodayViewProps> = ({
+  todayDate,
   stats,
   todayPlan,
   tasks,
@@ -100,6 +103,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onReorderToday,
   onOpenTaskModal,
   onDeleteTask,
+  onChangeDate,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
@@ -123,9 +127,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
   // Backlog Bucket contains ALL incomplete tasks (even those selected for today)
   const backlogTasks = tasks.filter(task => {
     const isCompletedToday = !!completions[task.id];
+    const isArchived = !!task.archivedAt;
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCat = selectedCategoryFilter ? task.categoryId === selectedCategoryFilter : true;
-    return !isCompletedToday && matchesSearch && matchesCat;
+    return !isCompletedToday && !isArchived && matchesSearch && matchesCat;
   });
 
   const backlogByCategory = categories.map(cat => ({
@@ -206,6 +211,22 @@ export const TodayView: React.FC<TodayViewProps> = ({
     setCollapsedCategories(prev => ({ ...prev, [catId]: !prev[catId] }));
   };
 
+  const handlePrevDay = () => {
+    if (!onChangeDate) return;
+    const d = new Date(todayDate);
+    d.setDate(d.getDate() - 1);
+    onChangeDate(d.toISOString().split('T')[0]);
+  };
+
+  const handleNextDay = () => {
+    if (!onChangeDate) return;
+    const d = new Date(todayDate);
+    d.setDate(d.getDate() + 1);
+    onChangeDate(d.toISOString().split('T')[0]);
+  };
+
+  const isActuallyToday = todayDate === new Date().toISOString().split('T')[0];
+
   return (
     <div className="flex-1 p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
       <div className="bg-gradient-to-r from-dark-900 via-dark-850 to-dark-900 border border-dark-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
@@ -220,7 +241,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
               BROMISE Execution Dashboard
             </h2>
             <p className="text-sm text-dark-500 max-w-lg">
-              Drag tasks freely between Today & Backlog. Reorder daily priorities and complete tasks.
+              Drag tasks freely between your schedule & Backlog. Reorder daily priorities and complete tasks.
             </p>
           </div>
 
@@ -253,7 +274,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
               : 'text-dark-500 hover:text-theme-title'
           }`}
         >
-          Today's Plan ({todayTasks.length})
+          Schedule ({todayTasks.length})
         </button>
         <button
           onClick={() => setMobileActiveTab('backlog')}
@@ -279,10 +300,28 @@ export const TodayView: React.FC<TodayViewProps> = ({
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center space-x-2">
                 <Calendar className="w-5 h-5 text-theme-accent" />
-                <h3 className="text-lg font-bold text-theme-title font-sans">Today's Schedule</h3>
+                <h3 className="text-lg font-bold text-theme-title font-sans">
+                  {isActuallyToday ? "Today's Schedule" : `Schedule: ${todayDate}`}
+                </h3>
                 <span className="bg-dark-800 text-dark-400 text-xs font-semibold px-2 py-0.5 rounded-full">
                   {todayTasks.length}
                 </span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <button
+                  onClick={handlePrevDay}
+                  className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
+                  title="Previous Day"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleNextDay}
+                  className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
+                  title="Next Day"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
               </div>
             </div>
 

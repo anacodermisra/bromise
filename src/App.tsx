@@ -33,9 +33,9 @@ const GOOGLE_CLIENT_ID = rawClientId || '87073790500-4ilmlvqndgk06pj6lgbds8lar1q
 
 const MainAppContent: React.FC = () => {
   const { user, loading } = useAuth();
-  const todayDate = formatDateKey(new Date());
 
   const [currentView, setCurrentView] = useState<ViewMode>('today');
+  const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
   const [categories, setCategories] = useState<Category[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [completionsMap, setCompletionsMap] = useState<Record<string, boolean>>({});
@@ -60,12 +60,16 @@ const MainAppContent: React.FC = () => {
 
     const compRecord: Record<string, boolean> = {};
     syncGetCompletions().forEach(c => {
-      if (c.date === todayDate) {
+      if (c.date === selectedDate) {
         compRecord[c.taskId] = c.completed;
       }
     });
     setCompletionsMap(compRecord);
   };
+
+  useEffect(() => {
+    reloadLocalData();
+  }, [selectedDate]);
 
   useEffect(() => {
     applyTheme(getStoredTheme());
@@ -103,27 +107,27 @@ const MainAppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  const stats = getDayStats(todayDate);
-  const todayPlan = syncGetOrInitDailyPlan(todayDate);
+  const stats = getDayStats(selectedDate);
+  const todayPlan = syncGetOrInitDailyPlan(selectedDate);
 
   // ─── HANDLERS ─────────────────────────────────────────────
   const handleToggleComplete = async (taskId: string) => {
-    const isCompleted = await syncToggleCompletion(taskId, todayDate);
+    const isCompleted = await syncToggleCompletion(taskId, selectedDate);
     setCompletionsMap(prev => ({ ...prev, [taskId]: isCompleted }));
   };
 
   const handleRemoveFromToday = async (taskId: string) => {
-    await syncRemoveFromToday(taskId, todayDate);
+    await syncRemoveFromToday(taskId, selectedDate);
     reloadLocalData();
   };
 
   const handleAddToToday = async (taskId: string) => {
-    await syncAddToToday(taskId, todayDate);
+    await syncAddToToday(taskId, selectedDate);
     reloadLocalData();
   };
 
   const handleReorderToday = async (reorderedTaskIds: string[]) => {
-    await syncReorderToday(todayDate, reorderedTaskIds);
+    await syncReorderToday(selectedDate, reorderedTaskIds);
     reloadLocalData();
   };
 
@@ -210,7 +214,8 @@ const MainAppContent: React.FC = () => {
         <main className="flex-1 flex flex-col overflow-y-auto">
           {currentView === 'today' && (
             <TodayView
-              todayDate={todayDate}
+              todayDate={selectedDate}
+              onChangeDate={setSelectedDate}
               stats={stats}
               todayPlan={todayPlan}
               tasks={tasks}
