@@ -124,13 +124,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   const todayTaskIds = todayTasks.map(t => t.id);
 
-  // Backlog Bucket contains ALL incomplete tasks (even those selected for today)
+  // Backlog Bucket contains ALL incomplete tasks (and recurring tasks even if completed today)
   const backlogTasks = tasks.filter(task => {
     const isCompletedToday = !!completions[task.id];
     const isArchived = !!task.archivedAt;
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCat = selectedCategoryFilter ? task.categoryId === selectedCategoryFilter : true;
-    return !isCompletedToday && !isArchived && matchesSearch && matchesCat;
+    return (task.isRecurring || !isCompletedToday) && !isArchived && matchesSearch && matchesCat;
   });
 
   const backlogByCategory = categories.map(cat => ({
