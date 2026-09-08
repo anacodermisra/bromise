@@ -12,7 +12,6 @@ import {
   getDayStats, formatDateKey, initSync, isServerOnline,
   resetData, pullFromServer
 } from './services/syncAdapter';
-import { api } from './services/api';
 import { initStorage } from './utils/storage';
 import type { ViewMode, Category, Task } from './types';
 import { getStoredTheme, applyTheme } from './utils/theme';
@@ -127,27 +126,12 @@ const MainAppContent: React.FC = () => {
     taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Partial<Task>,
     id?: string
   ) => {
-    let targetId = id;
     if (id) {
       await syncUpdateTask(id, taskData);
     } else {
-      const created = await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
-      targetId = created?.id;
+      await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
     }
-
-    // Save pending sub-tasks for both new and existing tasks
-    const pending = (taskData as any)._pendingSubtasks as string[] | undefined;
-    if (pending && pending.length > 0 && targetId) {
-      for (const title of pending) {
-        try {
-          await api.createSubtask(targetId, { title });
-        } catch (err) {
-          console.error('Failed to save pending subtask:', err);
-        }
-      }
-    }
-
-    // Always pull fresh data from server so subtasks are up to date
+    // Always pull fresh data from server so tasks are up to date
     if (serverOnline) {
       await pullFromServer();
     }

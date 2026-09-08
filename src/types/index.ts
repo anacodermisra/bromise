@@ -19,14 +19,6 @@ export interface RecurrenceRule {
   endDate?: string | null;
 }
 
-export interface SubTask {
-  id: string;
-  taskId: string;
-  title: string;
-  done: boolean;
-  position: number;
-  createdAt: string;
-}
 
 export interface Task {
   id: string;
@@ -37,7 +29,6 @@ export interface Task {
   deadline?: string | null; // Format: 'YYYY-MM-DD'
   isRecurring?: boolean;
   recurrenceRule?: RecurrenceRule;
-  subtasks?: SubTask[];
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;

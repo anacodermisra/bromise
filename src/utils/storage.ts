@@ -271,7 +271,9 @@ export function isTaskCompletedOnDate(taskId: string, dateStr: string): boolean 
 // STATS — computed purely from real plan & completion records
 // ─────────────────────────────────────────────────────────────
 export function getDayStats(dateStr: string) {
-  const plan = getOrInitDailyPlan(dateStr);
+  // Use the raw plan for this date (don't auto-insert recurring tasks here,
+  // that would inflate plannedCount and break the "0 of 2" counter display)
+  const plan = getDailyPlans().filter(p => p.date === dateStr);
   const tasks = getTasks();
   const categories = getCategories();
 

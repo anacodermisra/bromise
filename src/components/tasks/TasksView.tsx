@@ -276,28 +276,6 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
                     {task.notes && <p className="text-xs text-dark-500 truncate">{task.notes}</p>}
 
-                    {task.subtasks && task.subtasks.length > 0 && (() => {
-                      const done = task.subtasks.filter(s => s.done).length;
-                      const total = task.subtasks.length;
-                      const pct = Math.round((done / total) * 100);
-                      return (
-                        <div className="mt-2 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-dark-500 font-medium">{done}/{total} steps done</span>
-                            <span className="text-[10px] font-bold" style={{ color: pct === 100 ? '#10b981' : 'var(--color-theme-accent, #8b5cf6)' }}>{pct}%</span>
-                          </div>
-                          <div className="w-full bg-dark-800 rounded-full h-1">
-                            <div
-                              className="h-1 rounded-full transition-all duration-500"
-                              style={{
-                                width: `${pct}%`,
-                                background: pct === 100 ? '#10b981' : 'linear-gradient(to right, #8b5cf6, #a78bfa)',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   <div className="flex items-center space-x-2 self-end sm:self-center">
