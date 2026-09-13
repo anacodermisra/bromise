@@ -406,52 +406,63 @@ app.put('/api/plans/reorder', requireAuth, async (req, res) => {
 // ─────────────────────────────────────────
 // COMPLETIONS (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/completions', requireAuth, (req, res) => {
+app.get('/api/completions', requireAuth, async (req, res) => {
   const { date } = req.query;
   let rows;
   if (date) {
-    rows = db.prepare('SELECT * FROM completions WHERE date=? AND user_id=?').all(date, req.userId);
+    const result = await db.execute({ sql: 'SELECT * FROM completions WHERE date=? AND user_id=?', args: [date, req.userId] });
+    rows = result.rows;
   } else {
-    rows = db.prepare('SELECT * FROM completions WHERE user_id=? ORDER BY date DESC').all(req.userId);
+    const result = await db.execute({ sql: 'SELECT * FROM completions WHERE user_id=? ORDER BY date DESC', args: [req.userId] });
+    rows = result.rows;
   }
   res.json(rows.map(mapCompletion));
 });
 
-app.post('/api/completions/toggle', requireAuth, (req, res) => {
+app.post('/api/completions/toggle', requireAuth, async (req, res) => {
   const { taskId, date } = req.body;
   if (!taskId || !date) return res.status(400).json({ error: 'taskId and date required' });
-  const existing = db.prepare('SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?').get(taskId, date, req.userId);
+  const existingResult = await db.execute({ sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
+  const existing = existingResult.rows[0];
   let isNowCompleted;
   const id = `comp-${date}-${taskId}`;
   if (existing) {
     isNowCompleted = !existing.completed;
-    db.prepare('UPDATE completions SET completed=?,completed_at=? WHERE task_id=? AND date=? AND user_id=?')
-      .run(isNowCompleted ? 1 : 0, isNowCompleted ? nowISO() : null, taskId, date, req.userId);
+    await db.execute({
+      sql: 'UPDATE completions SET completed=?,completed_at=? WHERE task_id=? AND date=? AND user_id=?',
+      args: [isNowCompleted ? 1 : 0, isNowCompleted ? nowISO() : null, taskId, date, req.userId]
+    });
   } else {
     isNowCompleted = true;
-    db.prepare('INSERT INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)')
-      .run(id, req.userId, taskId, date, 1, nowISO());
+    await db.execute({
+      sql: 'INSERT INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)',
+      args: [id, req.userId, taskId, date, 1, nowISO()]
+    });
   }
-  const row = db.prepare('SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?').get(taskId, date, req.userId);
-  res.json(mapCompletion(row));
+  const rowResult = await db.execute({ sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
+  res.json(mapCompletion(rowResult.rows[0]));
 });
 
 // ─────────────────────────────────────────
 // STATS & ANALYTICS (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/stats', requireAuth, (req, res) => {
+app.get('/api/stats', requireAuth, async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date required' });
-  const plans = db.prepare('SELECT * FROM daily_plans WHERE date=? AND user_id=?').all(date, req.userId);
+  const plansResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
+  const plans = plansResult.rows;
   const plannedCount = plans.length;
   let completedCount = 0;
   const catNames = new Set();
   for (const plan of plans) {
-    const comp = db.prepare('SELECT completed FROM completions WHERE task_id=? AND date=? AND user_id=?').get(plan.task_id, date, req.userId);
+    const compResult = await db.execute({ sql: 'SELECT completed FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [plan.task_id, date, req.userId] });
+    const comp = compResult.rows[0];
     if (comp && comp.completed) completedCount++;
-    const task = db.prepare('SELECT category_id FROM tasks WHERE id=? AND user_id=?').get(plan.task_id, req.userId);
+    const taskResult = await db.execute({ sql: 'SELECT category_id FROM tasks WHERE id=? AND user_id=?', args: [plan.task_id, req.userId] });
+    const task = taskResult.rows[0];
     if (task) {
-      const cat = db.prepare('SELECT name FROM categories WHERE id=? AND user_id=?').get(task.category_id, req.userId);
+      const catResult = await db.execute({ sql: 'SELECT name FROM categories WHERE id=? AND user_id=?', args: [task.category_id, req.userId] });
+      const cat = catResult.rows[0];
       if (cat) catNames.add(cat.name);
     }
   }
@@ -459,7 +470,7 @@ app.get('/api/stats', requireAuth, (req, res) => {
   res.json({ date, plannedCount, completedCount, percentage, categoriesRepresented: [...catNames] });
 });
 
-app.get('/api/stats/streak', requireAuth, (req, res) => {
+app.get('/api/stats/streak', requireAuth, async (req, res) => {
   const today = new Date();
   let currentStreak = 0;
   let bestStreak = 0;
@@ -472,8 +483,10 @@ app.get('/api/stats/streak', requireAuth, (req, res) => {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const planned = db.prepare('SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?').get(dateStr, req.userId).c;
-    const completed = db.prepare('SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1').get(dateStr, req.userId).c;
+    const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+    const planned = Number(plannedResult.rows[0]?.c || 0);
+    const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
+    const completed = Number(compResult.rows[0]?.c || 0);
     if (planned > 0 && completed > 0) {
       tempStreak++;
       if (i === 0 || currentStreak === i) currentStreak++;
@@ -496,7 +509,7 @@ app.get('/api/stats/streak', requireAuth, (req, res) => {
   });
 });
 
-app.get('/api/stats/heatmap', requireAuth, (req, res) => {
+app.get('/api/stats/heatmap', requireAuth, async (req, res) => {
   const { startDate, endDate, days } = req.query;
 
   if (startDate && endDate) {
@@ -505,8 +518,10 @@ app.get('/api/stats/heatmap', requireAuth, (req, res) => {
     const end = new Date(endDate);
     while (curr <= end) {
       const dateStr = curr.toISOString().split('T')[0];
-      const planned = db.prepare('SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?').get(dateStr, req.userId).c;
-      const completed = db.prepare('SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1').get(dateStr, req.userId).c;
+      const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+      const planned = Number(plannedResult.rows[0]?.c || 0);
+      const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
+      const completed = Number(compResult.rows[0]?.c || 0);
       const percentage = planned > 0 ? Math.round((completed / planned) * 100) : 0;
       result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
       curr.setDate(curr.getDate() + 1);
@@ -521,19 +536,26 @@ app.get('/api/stats/heatmap', requireAuth, (req, res) => {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const planned = db.prepare('SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?').get(dateStr, req.userId).c;
-    const completed = db.prepare('SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1').get(dateStr, req.userId).c;
+    const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+    const planned = Number(plannedResult.rows[0]?.c || 0);
+    const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
+    const completed = Number(compResult.rows[0]?.c || 0);
     const percentage = planned > 0 ? Math.round((completed / planned) * 100) : 0;
     result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
   }
   res.json(result);
 });
 
-app.get('/api/stats/account-start', requireAuth, (req, res) => {
-  const earliestTask = db.prepare('SELECT MIN(created_at) as m FROM tasks WHERE user_id=?').get(req.userId)?.m;
-  const earliestCat = db.prepare('SELECT MIN(created_at) as m FROM categories WHERE user_id=?').get(req.userId)?.m;
-  const earliestPlan = db.prepare('SELECT MIN(date) as m FROM daily_plans WHERE user_id=?').get(req.userId)?.m;
-  const earliestComp = db.prepare('SELECT MIN(date) as m FROM completions WHERE user_id=?').get(req.userId)?.m;
+app.get('/api/stats/account-start', requireAuth, async (req, res) => {
+  const taskRes = await db.execute({ sql: 'SELECT MIN(created_at) as m FROM tasks WHERE user_id=?', args: [req.userId] });
+  const catRes = await db.execute({ sql: 'SELECT MIN(created_at) as m FROM categories WHERE user_id=?', args: [req.userId] });
+  const planRes = await db.execute({ sql: 'SELECT MIN(date) as m FROM daily_plans WHERE user_id=?', args: [req.userId] });
+  const compRes = await db.execute({ sql: 'SELECT MIN(date) as m FROM completions WHERE user_id=?', args: [req.userId] });
+
+  const earliestTask = taskRes.rows[0]?.m;
+  const earliestCat = catRes.rows[0]?.m;
+  const earliestPlan = planRes.rows[0]?.m;
+  const earliestComp = compRes.rows[0]?.m;
 
   let earliest = [earliestTask, earliestCat, earliestPlan, earliestComp]
     .filter(Boolean)
@@ -550,61 +572,80 @@ app.get('/api/stats/account-start', requireAuth, (req, res) => {
 // ─────────────────────────────────────────
 // EXPORT / IMPORT / RESET (USER PROTECTED)
 // ─────────────────────────────────────────
-app.get('/api/export', requireAuth, (req, res) => {
+app.get('/api/export', requireAuth, async (req, res) => {
+  const catsRes = await db.execute({ sql: 'SELECT * FROM categories WHERE user_id=?', args: [req.userId] });
+  const tasksRes = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=?', args: [req.userId] });
+  const plansRes = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=?', args: [req.userId] });
+  const compRes = await db.execute({ sql: 'SELECT * FROM completions WHERE user_id=?', args: [req.userId] });
+
+  const tasksWithRec = [];
+  for (const t of tasksRes.rows) {
+    const recRes = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
+    tasksWithRec.push(mapTask(t, recRes.rows[0]));
+  }
+
   const data = {
-    categories: db.prepare('SELECT * FROM categories WHERE user_id=?').all(req.userId).map(mapCategory),
-    tasks: db.prepare('SELECT * FROM tasks WHERE user_id=?').all(req.userId).map(t => mapTask(t, db.prepare('SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?').get(t.id, req.userId))),
-    dailyPlans: db.prepare('SELECT * FROM daily_plans WHERE user_id=?').all(req.userId).map(mapPlan),
-    completions: db.prepare('SELECT * FROM completions WHERE user_id=?').all(req.userId).map(mapCompletion),
+    categories: catsRes.rows.map(mapCategory),
+    tasks: tasksWithRec,
+    dailyPlans: plansRes.rows.map(mapPlan),
+    completions: compRes.rows.map(mapCompletion),
     exportedAt: nowISO(),
   };
   res.setHeader('Content-Disposition', `attachment; filename=bromise_backup_${new Date().toISOString().split('T')[0]}.json`);
   res.json(data);
 });
 
-app.post('/api/import', requireAuth, (req, res) => {
+app.post('/api/import', requireAuth, async (req, res) => {
   const { categories, tasks, dailyPlans, completions } = req.body;
   if (!categories || !tasks) return res.status(400).json({ error: 'Invalid backup file' });
-  const importAll = db.transaction(() => {
-    db.prepare('DELETE FROM completions WHERE user_id=?').run(req.userId);
-    db.prepare('DELETE FROM daily_plans WHERE user_id=?').run(req.userId);
-    db.prepare('DELETE FROM recurrence_rules WHERE user_id=?').run(req.userId);
-    db.prepare('DELETE FROM tasks WHERE user_id=?').run(req.userId);
-    db.prepare('DELETE FROM categories WHERE user_id=?').run(req.userId);
+
+  try {
+    await db.execute({ sql: 'DELETE FROM completions WHERE user_id=?', args: [req.userId] });
+    await db.execute({ sql: 'DELETE FROM daily_plans WHERE user_id=?', args: [req.userId] });
+    await db.execute({ sql: 'DELETE FROM recurrence_rules WHERE user_id=?', args: [req.userId] });
+    await db.execute({ sql: 'DELETE FROM tasks WHERE user_id=?', args: [req.userId] });
+    await db.execute({ sql: 'DELETE FROM categories WHERE user_id=?', args: [req.userId] });
+
     for (const c of categories) {
-      db.prepare('INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?)').run(
-        c.id, req.userId, c.name, c.icon, c.accent, c.position, c.createdAt, c.updatedAt || c.createdAt, 0
-      );
+      await db.execute({
+        sql: 'INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?)',
+        args: [c.id, req.userId, c.name, c.icon, c.accent, c.position, c.createdAt, c.updatedAt || c.createdAt, 0]
+      });
     }
     for (const t of tasks) {
-      db.prepare('INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(
-        t.id, req.userId, t.categoryId, t.title, t.notes || null, t.priority, t.deadline || null, t.isRecurring ? 1 : 0, t.createdAt, t.updatedAt, 0
-      );
+      await db.execute({
+        sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        args: [t.id, req.userId, t.categoryId, t.title, t.notes || null, t.priority, t.deadline || null, t.isRecurring ? 1 : 0, t.createdAt, t.updatedAt, 0]
+      });
       if (t.recurrenceRule) {
         const rr = t.recurrenceRule;
-        db.prepare('INSERT OR IGNORE INTO recurrence_rules (id,user_id,task_id,frequency,start_date,end_date,active) VALUES (?,?,?,?,?,?,?)').run(
-          rr.id, req.userId, t.id, rr.frequency || 'daily', rr.startDate, rr.endDate || null, rr.active !== false ? 1 : 0
-        );
+        await db.execute({
+          sql: 'INSERT OR IGNORE INTO recurrence_rules (id,user_id,task_id,frequency,start_date,end_date,active) VALUES (?,?,?,?,?,?,?)',
+          args: [rr.id, req.userId, t.id, rr.frequency || 'daily', rr.startDate, rr.endDate || null, rr.active !== false ? 1 : 0]
+        });
       }
     }
     for (const p of (dailyPlans || [])) {
-      db.prepare('INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)').run(
-        p.id, req.userId, p.taskId, p.date, p.position, p.sourceType || 'normal'
-      );
+      await db.execute({
+        sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)',
+        args: [p.id, req.userId, p.taskId, p.date, p.position, p.sourceType || 'normal']
+      });
     }
     for (const c of (completions || [])) {
-      db.prepare('INSERT OR IGNORE INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)').run(
-        c.id, req.userId, c.taskId, c.date, c.completed ? 1 : 0, c.completedAt || null
-      );
+      await db.execute({
+        sql: 'INSERT OR IGNORE INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)',
+        args: [c.id, req.userId, c.taskId, c.date, c.completed ? 1 : 0, c.completedAt || null]
+      });
     }
-  });
-  try { importAll(); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post('/api/seed/reset', requireAuth, (req, res) => {
-  db.prepare('DELETE FROM completions WHERE user_id=?').run(req.userId);
-  db.prepare('DELETE FROM daily_plans WHERE user_id=?').run(req.userId);
+app.post('/api/seed/reset', requireAuth, async (req, res) => {
+  await db.execute({ sql: 'DELETE FROM completions WHERE user_id=?', args: [req.userId] });
+  await db.execute({ sql: 'DELETE FROM daily_plans WHERE user_id=?', args: [req.userId] });
   res.json({ ok: true });
 });
 
