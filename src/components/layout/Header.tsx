@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, Sparkles, FolderPlus } from 'lucide-react';
+import { Plus, Sparkles, FolderPlus, LogOut } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import type { DayStats } from '../../types';
 
 interface HeaderProps {
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNewCategoryModal,
   currentView,
 }) => {
+  const { user, logout } = useAuth();
   const formattedDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'short',
@@ -98,6 +100,16 @@ export const Header: React.FC<HeaderProps> = ({
           <Plus className="w-4 h-4" />
           <span>New Task</span>
         </button>
+
+        {user && (
+          <button
+            onClick={logout}
+            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-dark-900 hover:bg-dark-850 border border-dark-800 hover:border-red-500/30 text-dark-400 hover:text-red-400 transition-colors flex-shrink-0"
+            title={`Log Out (${user.name})`}
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </header>
   );
