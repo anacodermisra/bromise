@@ -28,18 +28,29 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onAddToToday,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [deadlinesOnly, setDeadlinesOnly] = useState(false);
 
   const filteredTasks = tasks.filter(task => {
+    const taskCat = categories.find(c => c.id === task.categoryId);
     const matchesCat = activeCategoryFilter ? task.categoryId === activeCategoryFilter : true;
-    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase()) || (task.notes && task.notes.toLowerCase().includes(searchQuery.toLowerCase()));
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      !q ||
+      task.title.toLowerCase().includes(q) ||
+      (task.notes && task.notes.toLowerCase().includes(q)) ||
+      (taskCat && taskCat.name.toLowerCase().includes(q));
     const matchesPriority = priorityFilter === 'all' ? true : task.priority === priorityFilter;
     const matchesRecurring = recurringOnly ? task.isRecurring : true;
     const matchesDeadline = deadlinesOnly ? !!task.deadline : true;
     return matchesCat && matchesSearch && matchesPriority && matchesRecurring && matchesDeadline;
   });
+
+  const filteredCategories = categories.filter(c =>
+    c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())
+  );
 
   const priorityColors = {
     low: 'bg-dark-800 text-dark-500 border-dark-750',
@@ -50,18 +61,30 @@ export const TasksView: React.FC<TasksViewProps> = ({
   return (
     <div className="flex-1 p-4 md:p-8 space-y-8 max-w-7xl mx-auto w-full">
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-bold text-theme-title font-sans">Categories</h3>
             <p className="text-xs text-dark-500">Manage structure, colors, icons, and categories.</p>
           </div>
-          <button
-            onClick={() => onOpenCategoryModal()}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-dark-850 hover:bg-dark-800 text-theme-accent text-xs font-semibold border border-dark-750 transition-colors"
-          >
-            <FolderPlus className="w-4 h-4 text-theme-accent" />
-            <span>New Category</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2 text-dark-500" />
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={categorySearchQuery}
+                onChange={e => setCategorySearchQuery(e.target.value)}
+                className="w-44 bg-dark-900 border border-dark-800 rounded-xl pl-8 pr-3 py-2 text-xs text-theme-title placeholder-dark-500 focus:outline-none focus:border-theme-accent transition-colors"
+              />
+            </div>
+            <button
+              onClick={() => onOpenCategoryModal()}
+              className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-dark-850 hover:bg-dark-800 text-theme-accent text-xs font-semibold border border-dark-750 transition-colors flex-shrink-0"
+            >
+              <FolderPlus className="w-4 h-4 text-theme-accent" />
+              <span>New Category</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -80,17 +103,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
             <div className="text-xs text-dark-500 mt-1">{tasks.length} total tasks</div>
           </button>
 
-          {categories.map(cat => {
+          {filteredCategories.map(cat => {
             const isSelected = activeCategoryFilter === cat.id;
             const catTasksCount = tasks.filter(t => t.categoryId === cat.id).length;
             return (
               <div
                 key={cat.id}
                 onClick={() => onSelectCategoryFilter(isSelected ? null : cat.id)}
-                className={`group relative p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                className={`group relative p-4 rounded-2xl border cursor-pointer transition-all duration-200 interactive-card ${
                   isSelected
-                    ? 'bg-dark-850 border-dark-700 text-theme-title shadow-lg'
-                    : 'bg-dark-900 border-dark-800 text-dark-400 hover:text-theme-title hover:border-dark-750'
+                    ? 'bg-dark-850 border-theme-accent/60 text-theme-title shadow-glow-sm'
+                    : 'bg-dark-900 border-dark-800 text-dark-400 hover:text-theme-title hover:border-theme-accent/30'
                 }`}
               >
                 <div className="flex items-center justify-between mb-3">

@@ -5,6 +5,8 @@ import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus, Downloa
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../contexts/AuthContext';
 
+import { APP_VERSION } from '../../config/version';
+
 interface SidebarProps {
   currentView: ViewMode;
   onSelectView: (view: ViewMode) => void;
@@ -54,7 +56,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-wider text-theme-title font-sans">BROMISE</h1>
+              <div className="flex items-center space-x-2">
+                <h1 className="text-lg font-black tracking-wider text-theme-title font-sans">BROMISE</h1>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-theme-accent/20 text-theme-accent border border-theme-accent/30 font-mono">
+                  v{APP_VERSION}
+                </span>
+              </div>
               <p className="text-[10px] text-theme-accent opacity-90 font-semibold italic">Do it for your younger self.</p>
             </div>
           </div>

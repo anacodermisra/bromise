@@ -29,7 +29,7 @@ import {
   updateTask as lsUpdateTask, deleteTask as lsDeleteTask,
   getDailyPlans, saveDailyPlans, addTasksToDailyPlan as lsAddToPlan,
   removeTaskFromDailyPlan as lsRemoveFromPlan, reorderDailyPlan as lsReorder,
-  getOrInitDailyPlan,
+  getOrInitDailyPlan, assignTaskToTimeSlot as lsAssignTimeSlot, removeTaskTimeSlot as lsRemoveTimeSlot,
   getCompletions, saveCompletions, toggleTaskCompletion as lsToggle,
   getDayStats, getHeatmapData, getStreakInfo,
   exportDataJSON, importDataJSON, resetToSeedData,
@@ -293,6 +293,16 @@ export async function syncRemoveFromToday(taskId: string, date: string): Promise
 export async function syncReorderToday(date: string, orderedTaskIds: string[]): Promise<void> {
   lsReorder(date, orderedTaskIds);
   await trySync(() => {}, 'REORDER_PLANS', { date, orderedTaskIds });
+}
+
+export async function syncAssignTimeSlot(date: string, taskId: string, timeSlot: string): Promise<void> {
+  lsAssignTimeSlot(date, taskId, timeSlot);
+  await trySync(() => {}, 'ASSIGN_TIME_SLOT', { date, taskId, timeSlot });
+}
+
+export async function syncRemoveTimeSlot(date: string, taskId: string): Promise<void> {
+  lsRemoveTimeSlot(date, taskId);
+  await trySync(() => {}, 'REMOVE_TIME_SLOT', { date, taskId });
 }
 
 // ─── COMPLETIONS ──────────────────────────────────────────

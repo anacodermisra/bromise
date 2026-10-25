@@ -40,6 +40,8 @@ export interface DailyPlanItem {
   taskId: string;
   position: number;
   sourceType: 'normal' | 'recurring';
+  timeSlot?: string; // Format: "00:00" to "23:00"
+  durationMinutes?: number;
 }
 
 export interface TaskCompletion {

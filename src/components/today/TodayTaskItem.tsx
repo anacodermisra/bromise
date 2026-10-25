@@ -16,7 +16,7 @@ interface TodayTaskItemProps {
   onDeleteTask: (taskId: string) => void;
 }
 
-export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
+export const TodayTaskItem: React.FC<TodayTaskItemProps> = React.memo(({
   task,
   category,
   isCompleted,
@@ -50,7 +50,7 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
       className={`group relative flex items-center space-x-3 p-3.5 rounded-2xl border transition-all duration-200 ${
         isCompleted
           ? 'bg-dark-900/40 border-dark-850 opacity-75'
-          : 'bg-dark-900/90 border-dark-800 hover:border-dark-700 hover:bg-dark-850/80 shadow-sm'
+          : 'bg-dark-900/90 border-dark-800 hover:border-theme-accent/40 hover:bg-dark-850/90 shadow-sm interactive-card'
       }`}
     >
       <button
@@ -156,4 +156,4 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = ({
       </div>
     </div>
   );
-};
+});

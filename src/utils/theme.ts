@@ -1,4 +1,4 @@
-export type ThemeId = 'dark-midnight' | 'cyberpunk' | 'emerald-forest' | 'sunset-amber';
+export type ThemeId = 'dark-midnight' | 'winter-arc' | 'cyberpunk' | 'emerald-forest' | 'sunset-amber';
 
 export interface ThemeConfig {
   id: ThemeId;
@@ -9,6 +9,13 @@ export interface ThemeConfig {
 }
 
 export const THEMES: ThemeConfig[] = [
+  {
+    id: 'winter-arc',
+    name: 'Winter Arc (Frost & Discipline)',
+    isDark: true,
+    previewBg: '#05080c',
+    previewAccent: '#38bdf8',
+  },
   {
     id: 'dark-midnight',
     name: 'Midnight Command (Dark)',

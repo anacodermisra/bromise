@@ -5,6 +5,8 @@ import { THEMES, getStoredTheme, applyTheme } from '../../utils/theme';
 import type { ThemeId } from '../../utils/theme';
 import { Download, Upload, RotateCcw, ShieldCheck, Check, Sparkles, Palette, Wifi, WifiOff, LogOut, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { APP_VERSION, APP_RELEASE_NAME } from '../../config/version';
+import { Info } from 'lucide-react';
 
 interface SettingsViewProps {
   onDataReset: () => void;
@@ -138,6 +140,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDataReset, onDataI
         <div className={`w-2.5 h-2.5 rounded-full ${serverOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
       </div>
 
+      {/* Version & Build Information */}
+      <div className="p-4 rounded-2xl border border-dark-800 bg-dark-900 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center border border-theme-accent/30 bg-theme-accent/10 text-theme-accent">
+            <Info className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-bold text-theme-title">BROMISE Command Center</span>
+              <span className="px-2 py-0.5 rounded-full bg-theme-accent/20 text-theme-accent text-xs font-mono font-bold border border-theme-accent/30">
+                v{APP_VERSION}
+              </span>
+            </div>
+            <div className="text-xs text-dark-500">
+              {APP_RELEASE_NAME} · High Performance Daily Engine
+            </div>
+          </div>
+        </div>
+        <span className="text-[11px] font-semibold text-dark-400 bg-dark-800 px-2.5 py-1 rounded-lg border border-dark-750">
+          Latest
+        </span>
+      </div>
+
       {/* Theme Selection */}
       <div className="p-6 rounded-3xl bg-dark-900 border border-dark-800 space-y-5">
         <div className="flex items-center space-x-3">
@@ -157,10 +182,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDataReset, onDataI
               <button
                 key={theme.id}
                 onClick={() => handleSelectTheme(theme.id)}
-                className={`p-4 rounded-2xl border flex items-center space-x-3 transition-all duration-200 text-left ${
+                className={`p-4 rounded-2xl border flex items-center space-x-3 transition-all duration-200 text-left interactive-card ${
                   isSelected
                     ? 'bg-dark-850 border-theme-accent text-theme-title shadow-glow-accent ring-2 ring-theme-accent/40'
-                    : 'bg-dark-950 border-dark-800 text-dark-400 hover:text-theme-title hover:border-dark-750'
+                    : 'bg-dark-950 border-dark-800 text-dark-400 hover:text-theme-title hover:border-theme-accent/40'
                 }`}
               >
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center border shadow-inner" style={{ backgroundColor: theme.previewBg }}>

@@ -5,7 +5,10 @@
  * Used by the sync adapter — not called directly by components.
  */
 
-const BASE = '/api';
+const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
+const BASE = envBase
+  ? (envBase.endsWith('/api') ? envBase : `${envBase.replace(/\/$/, '')}/api`)
+  : '/api';
 
 export function getStoredToken(): string | null {
   return localStorage.getItem('bromise_token');

@@ -8,6 +8,7 @@ import {
   syncAddCategory, syncUpdateCategory, syncDeleteCategory,
   syncAddTask, syncUpdateTask, syncDeleteTask,
   syncAddToToday, syncRemoveFromToday, syncReorderToday,
+  syncAssignTimeSlot, syncRemoveTimeSlot,
   syncToggleCompletion,
   getDayStats, formatDateKey, initSync, isServerOnline,
   resetData, pullFromServer
@@ -71,6 +72,37 @@ const MainAppContent: React.FC = () => {
     reloadLocalData();
   }, [selectedDate]);
 
+  // Midnight auto-rollover & morning tab focus detection
+  useEffect(() => {
+    const handleCheckDate = () => {
+      const todayKey = formatDateKey(new Date());
+      setSelectedDate(prev => {
+        // If current selected date is older than today, auto-roll to today
+        if (prev < todayKey) {
+          return todayKey;
+        }
+        return prev;
+      });
+      reloadLocalData();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        handleCheckDate();
+      }
+    };
+
+    const timer = setInterval(handleCheckDate, 30_000);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, []);
+
   useEffect(() => {
     applyTheme(getStoredTheme());
     setActiveUser(user ? user.id : null);
@@ -128,6 +160,16 @@ const MainAppContent: React.FC = () => {
 
   const handleReorderToday = async (reorderedTaskIds: string[]) => {
     await syncReorderToday(selectedDate, reorderedTaskIds);
+    reloadLocalData();
+  };
+
+  const handleAssignTimeSlot = async (taskId: string, timeSlot: string) => {
+    await syncAssignTimeSlot(selectedDate, taskId, timeSlot);
+    reloadLocalData();
+  };
+
+  const handleRemoveTimeSlot = async (taskId: string) => {
+    await syncRemoveTimeSlot(selectedDate, taskId);
     reloadLocalData();
   };
 
@@ -225,6 +267,8 @@ const MainAppContent: React.FC = () => {
               onRemoveFromToday={handleRemoveFromToday}
               onAddToToday={handleAddToToday}
               onReorderToday={handleReorderToday}
+              onAssignTimeSlot={handleAssignTimeSlot}
+              onRemoveTimeSlot={handleRemoveTimeSlot}
               onOpenTaskModal={task => {
                 setEditingTask(task || null);
                 setIsTaskModalOpen(true);

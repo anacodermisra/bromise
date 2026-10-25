@@ -18,6 +18,20 @@
     color-scheme: dark;
   }
 
+  [data-theme="winter-arc"] {
+    --app-bg: 5 8 12;
+    --card-bg: 10 16 23;
+    --hover-bg: 16 25 36;
+    --border-color: 24 37 53;
+    --border-strong: 38 58 82;
+    --text-title: 224 242 254; /* Frosted Sky */
+    --text-body: 240 249 255;
+    --text-sub: 125 154 184;
+    --accent-primary: 56 189 248; /* Ice Sky Blue */
+    --accent-secondary: 148 163 184; /* Frozen Slate */
+    color-scheme: dark;
+  }
+
   [data-theme="cyberpunk"] {
     --app-bg: 7 5 15;
     --card-bg: 16 11 33;
@@ -130,6 +144,25 @@
   /* --- Shadow glow accent (dynamic) --- */
   .shadow-glow-accent {
     box-shadow: 0 0 20px -5px rgb(var(--accent-primary) / 0.4);
+  }
+
+  .shadow-glow-sm {
+    box-shadow: 0 0 12px -3px rgb(var(--accent-primary) / 0.25);
+  }
+
+  /* --- Interactive Card & Hover Dynamics --- */
+  .interactive-card {
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .interactive-card:hover {
+    transform: translateY(-1.5px);
+    box-shadow: 0 8px 24px -6px rgb(var(--accent-primary) / 0.2);
+    border-color: rgb(var(--accent-primary) / 0.4);
+  }
+
+  .frost-blur {
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 
   /* --- Selection color --- */

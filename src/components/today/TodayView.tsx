@@ -22,16 +22,20 @@ import { BacklogTaskItem } from './BacklogTaskItem';
 import { DragOverlayItem } from './DragOverlayItem';
 import { TaskCompletionModal } from './TaskCompletionModal';
 import { IconHelper } from '../common/IconHelper';
+import { TimetableView } from './TimetableView';
 import {
   Calendar,
   CheckCircle2,
   ListTodo,
   Plus,
   Search,
-  Sparkles,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
+  Sun,
+  Moon,
+  Zap,
+  Clock,
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -45,6 +49,8 @@ interface TodayViewProps {
   onRemoveFromToday: (taskId: string) => void;
   onAddToToday: (taskId: string) => void;
   onReorderToday: (taskIds: string[]) => void;
+  onAssignTimeSlot?: (taskId: string, timeSlot: string) => void;
+  onRemoveTimeSlot?: (taskId: string) => void;
   onOpenTaskModal: (task?: Task) => void;
   onDeleteTask: (taskId: string) => void;
   onChangeDate?: (date: string) => void;
@@ -101,10 +107,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onRemoveFromToday,
   onAddToToday,
   onReorderToday,
+  onAssignTimeSlot,
+  onRemoveTimeSlot,
   onOpenTaskModal,
   onDeleteTask,
   onChangeDate,
 }) => {
+  const [scheduleMode, setScheduleMode] = useState<'list' | 'timetable'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
@@ -128,15 +137,29 @@ export const TodayView: React.FC<TodayViewProps> = ({
   const backlogTasks = tasks.filter(task => {
     const isCompletedToday = !!completions[task.id];
     const isArchived = !!task.archivedAt;
-    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const taskCat = categories.find(c => c.id === task.categoryId);
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      task.title.toLowerCase().includes(q) ||
+      (task.notes && task.notes.toLowerCase().includes(q)) ||
+      (taskCat && taskCat.name.toLowerCase().includes(q));
     const matchesCat = selectedCategoryFilter ? task.categoryId === selectedCategoryFilter : true;
     return (task.isRecurring || !isCompletedToday) && !isArchived && matchesSearch && matchesCat;
   });
 
-  const backlogByCategory = categories.map(cat => ({
-    category: cat,
-    tasks: backlogTasks.filter(t => t.categoryId === cat.id),
-  }));
+  const backlogByCategory = categories
+    .filter(cat => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      const catMatches = cat.name.toLowerCase().includes(q);
+      const hasMatchingTasks = backlogTasks.some(t => t.categoryId === cat.id);
+      return catMatches || hasMatchingTasks;
+    })
+    .map(cat => ({
+      category: cat,
+      tasks: backlogTasks.filter(t => t.categoryId === cat.id),
+    }));
 
   const handleToggleCompleteWithConfetti = (taskId: string) => {
     const isCurrentlyCompleted = !!completions[taskId];
@@ -181,6 +204,16 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // Drop onto 24h Timetable hour slot
+    if (overId.startsWith('hour-slot-')) {
+      const timeSlot = overId.replace('hour-slot-', '');
+      const actualTaskId = activeId.startsWith('backlog-') ? activeId.replace('backlog-', '') : activeId;
+      if (onAssignTimeSlot) {
+        onAssignTimeSlot(actualTaskId, timeSlot);
+      }
+      return;
+    }
 
     if (activeId.startsWith('backlog-')) {
       const actualTaskId = activeId.replace('backlog-', '');
@@ -227,28 +260,70 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   const isActuallyToday = todayDate === new Date().toISOString().split('T')[0];
 
+  const getGreetingData = () => {
+    const hour = new Date().getHours();
+    const remaining = Math.max(0, stats.plannedCount - stats.completedCount);
+
+    let greeting = 'Good morning';
+    let Icon = Sun;
+    if (hour >= 12 && hour < 17) {
+      greeting = 'Good afternoon';
+      Icon = Zap;
+    } else if (hour >= 17 && hour < 22) {
+      greeting = 'Good evening';
+      Icon = Moon;
+    } else if (hour >= 22 || hour < 5) {
+      greeting = 'Late Night Grind';
+      Icon = Moon;
+    }
+
+    let taskBrief = '';
+    if (stats.plannedCount === 0) {
+      taskBrief = 'You have no tasks scheduled for today yet. Add daily priorities from your Backlog below!';
+    } else if (remaining === 0) {
+      taskBrief = `Crushed it! All ${stats.plannedCount} tasks are completed for today.`;
+    } else {
+      taskBrief = `You have ${stats.plannedCount} tasks today — ${stats.completedCount} done, ${remaining} remaining. Time to execute!`;
+    }
+
+    return { greeting, Icon, taskBrief, remaining };
+  };
+
+  const { greeting, Icon: GreetingIcon, taskBrief, remaining } = getGreetingData();
+
   return (
     <div className="flex-1 p-4 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
-      <div className="bg-gradient-to-r from-dark-900 via-dark-850 to-dark-900 border border-dark-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+      {/* GOOD MORNING BRIEFING BANNER */}
+      <div className="bg-gradient-to-r from-dark-900 via-dark-850 to-dark-900 border border-dark-800 hover:border-theme-accent/30 rounded-3xl p-6 shadow-xl relative overflow-hidden transition-all duration-300">
         <div className="absolute top-0 right-0 w-96 h-96 bg-theme-accent/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center space-x-2 text-theme-accent font-bold text-xs uppercase tracking-wider">
-              <Sparkles className="w-4 h-4 text-theme-accent-secondary" />
-              <span className="italic text-theme-accent-secondary">"Do it for your younger self."</span>
+              <GreetingIcon className="w-4 h-4 text-theme-accent" />
+              <span>{greeting}</span>
+              <span className="text-dark-600">·</span>
+              <span className="text-theme-accent-secondary italic">"Do it for your younger self."</span>
             </div>
             <h2 className="text-2xl md:text-3xl font-extrabold text-theme-title font-sans tracking-tight">
-              BROMISE Execution Dashboard
+              {isActuallyToday ? `${greeting}, Commander.` : `Log: ${todayDate}`}
             </h2>
-            <p className="text-sm text-dark-500 max-w-lg">
-              Drag tasks freely between your schedule & Backlog. Reorder daily priorities and complete tasks.
+            <p className="text-sm text-dark-300 font-medium max-w-xl">
+              {taskBrief}
             </p>
+            {!isActuallyToday && onChangeDate && (
+              <button
+                onClick={() => onChangeDate(new Date().toISOString().split('T')[0])}
+                className="mt-2 inline-flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-theme-accent/15 hover:bg-theme-accent/25 text-theme-accent text-xs font-bold border border-theme-accent/30 transition-colors"
+              >
+                <span>Jump to Today's Tasks</span>
+              </button>
+            )}
           </div>
 
-          <div className="bg-dark-950/80 border border-dark-800 rounded-2xl p-4 min-w-[240px] flex items-center space-x-4">
+          <div className="bg-dark-950/80 border border-dark-800 rounded-2xl p-4 min-w-[240px] flex items-center space-x-4 shadow-inner">
             <div className="flex-1 space-y-1.5">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-dark-500 font-medium">Completion Rate</span>
+                <span className="text-dark-400 font-medium">Daily Target</span>
                 <span className="text-theme-accent font-bold">{stats.percentage}%</span>
               </div>
               <div className="w-full bg-dark-800 h-2.5 rounded-full overflow-hidden">
@@ -257,8 +332,11 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   style={{ width: `${stats.percentage}%` }}
                 />
               </div>
-              <div className="text-[11px] text-dark-500 font-medium">
-                {stats.completedCount} of {stats.plannedCount} tasks completed today
+              <div className="text-[11px] text-dark-400 font-medium flex justify-between">
+                <span>{stats.completedCount} / {stats.plannedCount} completed</span>
+                <span className={remaining === 0 && stats.plannedCount > 0 ? 'text-emerald-400 font-bold' : 'text-theme-accent'}>
+                  {remaining} left
+                </span>
               </div>
             </div>
           </div>
@@ -297,7 +375,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start h-full">
           {/* LEFT/CENTER COLUMN: TODAY'S PLAN */}
           <TodayDropZoneContainer isMobileHidden={mobileActiveTab !== 'today'}>
-            <div className="flex items-center justify-between px-1">
+            <div className="flex items-center justify-between px-1 flex-wrap gap-2">
               <div className="flex items-center space-x-2">
                 <Calendar className="w-5 h-5 text-theme-accent" />
                 <h3 className="text-lg font-bold text-theme-title font-sans">
@@ -307,25 +385,65 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   {todayTasks.length}
                 </span>
               </div>
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={handlePrevDay}
-                  className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
-                  title="Previous Day"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleNextDay}
-                  className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
-                  title="Next Day"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+
+              {/* View Switcher: List vs 24h Timetable */}
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center bg-dark-900 border border-dark-800 p-0.5 rounded-xl">
+                  <button
+                    onClick={() => setScheduleMode('list')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      scheduleMode === 'list'
+                        ? 'bg-theme-accent text-white shadow-glow-sm'
+                        : 'text-dark-400 hover:text-white'
+                    }`}
+                  >
+                    List
+                  </button>
+                  <button
+                    onClick={() => setScheduleMode('timetable')}
+                    className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      scheduleMode === 'timetable'
+                        ? 'bg-theme-accent text-white shadow-glow-sm'
+                        : 'text-dark-400 hover:text-white'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>24h Timetable</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={handlePrevDay}
+                    className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
+                    title="Previous Day"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={handleNextDay}
+                    className="p-1 rounded-lg hover:bg-dark-800 text-dark-400 hover:text-theme-title transition-colors"
+                    title="Next Day"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
 
-            {todayTasks.length === 0 ? (
+            {scheduleMode === 'timetable' ? (
+              <TimetableView
+                todayDate={todayDate}
+                todayPlan={todayPlan}
+                tasks={tasks}
+                categories={categories}
+                completions={completions}
+                onToggleComplete={handleToggleCompleteWithConfetti}
+                onRemoveFromTimeSlot={taskId => (onRemoveTimeSlot ? onRemoveTimeSlot(taskId) : onRemoveFromToday(taskId))}
+                onOpenTaskModal={onOpenTaskModal}
+                onDeleteTask={onDeleteTask}
+              />
+            ) : todayTasks.length === 0 ? (
               <div className="bg-dark-900/60 border border-dashed border-dark-800 rounded-3xl p-8 text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-theme-accent/10 border border-theme-accent/20 text-theme-accent flex items-center justify-center mx-auto">
                   <ListTodo className="w-6 h-6" />
@@ -383,7 +501,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 transform -translate-y-1/2 text-dark-500" />
                 <input
                   type="text"
-                  placeholder="Filter backlog..."
+                  placeholder="Search tasks or categories..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="w-full bg-dark-900 border border-dark-800 rounded-xl pl-9 pr-4 py-2 text-xs text-theme-title placeholder-dark-500 focus:outline-none focus:border-theme-accent transition-colors"

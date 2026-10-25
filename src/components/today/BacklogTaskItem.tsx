@@ -14,7 +14,7 @@ interface BacklogTaskItemProps {
   onDeleteTask: (taskId: string) => void;
 }
 
-export const BacklogTaskItem: React.FC<BacklogTaskItemProps> = ({
+export const BacklogTaskItem: React.FC<BacklogTaskItemProps> = React.memo(({
   task,
   category,
   isScheduledToday,
@@ -46,7 +46,7 @@ export const BacklogTaskItem: React.FC<BacklogTaskItemProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative flex items-center space-x-3 p-3 rounded-xl border bg-dark-900/80 border-dark-800 hover:border-dark-700 hover:bg-dark-850/80 transition-all duration-200 ${
+      className={`group relative flex items-center space-x-3 p-3 rounded-xl border bg-dark-900/80 border-dark-800 hover:border-theme-accent/40 hover:bg-dark-850/90 interactive-card transition-all duration-200 ${
         isDragging ? 'z-50 shadow-2xl ring-2 ring-theme-accent' : ''
       }`}
     >
@@ -147,4 +147,4 @@ export const BacklogTaskItem: React.FC<BacklogTaskItemProps> = ({
       </div>
     </div>
   );
-};
+});

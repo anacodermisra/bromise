@@ -243,6 +243,37 @@ export function reorderDailyPlan(dateStr: string, reorderedTaskIds: string[]) {
   saveDailyPlans([...otherPlans, ...updatedTargetPlans]);
 }
 
+export function assignTaskToTimeSlot(dateStr: string, taskId: string, timeSlot: string) {
+  const allPlans = getDailyPlans();
+  const existing = allPlans.find(p => p.date === dateStr && p.taskId === taskId);
+  if (existing) {
+    const updated = allPlans.map(p =>
+      p.date === dateStr && p.taskId === taskId ? { ...p, timeSlot } : p
+    );
+    saveDailyPlans(updated);
+  } else {
+    const datePlans = allPlans.filter(p => p.date === dateStr);
+    const maxPos = datePlans.length > 0 ? Math.max(...datePlans.map(p => p.position)) + 1 : 0;
+    const newItem: DailyPlanItem = {
+      id: `plan-${dateStr}-${taskId}`,
+      date: dateStr,
+      taskId,
+      position: maxPos,
+      sourceType: 'normal',
+      timeSlot,
+    };
+    saveDailyPlans([...allPlans, newItem]);
+  }
+}
+
+export function removeTaskTimeSlot(dateStr: string, taskId: string) {
+  const allPlans = getDailyPlans();
+  const updated = allPlans.map(p =>
+    p.date === dateStr && p.taskId === taskId ? { ...p, timeSlot: undefined } : p
+  );
+  saveDailyPlans(updated);
+}
+
 // ─────────────────────────────────────────────────────────────
 // COMPLETIONS
 // ─────────────────────────────────────────────────────────────
