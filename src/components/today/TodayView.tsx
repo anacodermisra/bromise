@@ -192,6 +192,12 @@ export const TodayView: React.FC<TodayViewProps> = ({
     let targetTaskId = activeId;
     if (activeId.startsWith('backlog-')) {
       targetTaskId = activeId.replace('backlog-', '');
+    } else if (activeId.startsWith('unscheduled-')) {
+      targetTaskId = activeId.replace('unscheduled-', '');
+    } else if (activeId.startsWith('slot-')) {
+      const planItemId = activeId.replace('slot-', '');
+      const existingSlot = todayPlan.find(p => p.id === planItemId);
+      if (existingSlot) targetTaskId = existingSlot.taskId;
     }
     const foundTask = tasks.find(t => t.id === targetTaskId);
     if (foundTask) {
@@ -207,10 +213,34 @@ export const TodayView: React.FC<TodayViewProps> = ({
     const activeId = String(active.id);
     const overId = String(over.id);
 
-    // Drop onto 24h Timetable hour slot
+    // Drop onto 24h Timetable hour or half-hour slot
     if (overId.startsWith('hour-slot-')) {
       const timeSlot = overId.replace('hour-slot-', '');
-      const actualTaskId = activeId.startsWith('backlog-') ? activeId.replace('backlog-', '') : activeId;
+
+      // Case A: Moving an existing scheduled slot to another hour/half-hour
+      if (activeId.startsWith('slot-')) {
+        const planItemId = activeId.replace('slot-', '');
+        const existingSlot = todayPlan.find(p => p.id === planItemId);
+        if (existingSlot && onAssignTimeSlot) {
+          onAssignTimeSlot(
+            existingSlot.taskId,
+            timeSlot,
+            existingSlot.durationMinutes || 60,
+            undefined,
+            planItemId
+          );
+        }
+        return;
+      }
+
+      // Case B: Dragging from backlog, unscheduled panel, or today list
+      let actualTaskId = activeId;
+      if (activeId.startsWith('backlog-')) {
+        actualTaskId = activeId.replace('backlog-', '');
+      } else if (activeId.startsWith('unscheduled-')) {
+        actualTaskId = activeId.replace('unscheduled-', '');
+      }
+
       if (onAssignTimeSlot) {
         onAssignTimeSlot(actualTaskId, timeSlot, 60);
       }
@@ -226,6 +256,18 @@ export const TodayView: React.FC<TodayViewProps> = ({
     }
 
     if (overId === 'backlog-drop-zone') {
+      if (activeId.startsWith('unscheduled-')) {
+        const actualTaskId = activeId.replace('unscheduled-', '');
+        onRemoveFromToday(actualTaskId);
+        return;
+      }
+      if (activeId.startsWith('slot-')) {
+        const planItemId = activeId.replace('slot-', '');
+        if (onRemoveTimeSlot) {
+          onRemoveTimeSlot(planItemId);
+          return;
+        }
+      }
       onRemoveFromToday(activeId);
       return;
     }

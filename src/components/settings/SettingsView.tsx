@@ -1,9 +1,31 @@
 import React, { useState } from 'react';
 import { exportDataJSON, importDataJSON } from '../../utils/storage';
 import { resetToSeedData } from '../../utils/storage';
-import { THEMES, getStoredTheme, applyTheme } from '../../utils/theme';
+import {
+  THEMES,
+  getStoredTheme,
+  applyTheme,
+  isWinterArcSnowEnabled,
+  setWinterArcSnowEnabled,
+  isWinterArcWallpaperEnabled,
+  setWinterArcWallpaperEnabled,
+} from '../../utils/theme';
 import type { ThemeId } from '../../utils/theme';
-import { Download, Upload, RotateCcw, ShieldCheck, Check, Sparkles, Palette, Wifi, WifiOff, LogOut, User as UserIcon } from 'lucide-react';
+import {
+  Download,
+  Upload,
+  RotateCcw,
+  ShieldCheck,
+  Check,
+  Sparkles,
+  Palette,
+  Wifi,
+  WifiOff,
+  LogOut,
+  User as UserIcon,
+  Image,
+  Snowflake,
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_VERSION, APP_RELEASE_NAME } from '../../config/version';
 import { Info } from 'lucide-react';
@@ -17,11 +39,25 @@ interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({ onDataReset, onDataImported, serverOnline }) => {
   const { user, logout } = useAuth();
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(getStoredTheme());
+  const [winterSnow, setWinterSnow] = useState(isWinterArcSnowEnabled());
+  const [winterWallpaper, setWinterWallpaper] = useState(isWinterArcWallpaperEnabled());
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const handleSelectTheme = (themeId: ThemeId) => {
     setCurrentTheme(themeId);
     applyTheme(themeId);
+  };
+
+  const handleToggleSnow = () => {
+    const next = !winterSnow;
+    setWinterSnow(next);
+    setWinterArcSnowEnabled(next);
+  };
+
+  const handleToggleWallpaper = () => {
+    const next = !winterWallpaper;
+    setWinterWallpaper(next);
+    setWinterArcWallpaperEnabled(next);
   };
 
   const handleExport = () => {
@@ -188,18 +224,101 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDataReset, onDataI
                     : 'bg-dark-950 border-dark-800 text-dark-400 hover:text-theme-title hover:border-theme-accent/40'
                 }`}
               >
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center border shadow-inner" style={{ backgroundColor: theme.previewBg }}>
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.previewAccent }} />
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center border shadow-inner overflow-hidden flex-shrink-0"
+                  style={{ backgroundColor: theme.previewBg }}
+                >
+                  {theme.hasArtwork ? (
+                    <img
+                      src="/winter-arc-bg.jpg"
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme.previewAccent }} />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold truncate">{theme.name}</div>
-                  <div className="text-[10px] text-dark-500">Dark Mode</div>
+                  <div className="text-[10px] text-dark-500">
+                    {theme.hasArtwork ? 'Artwork + Snow' : 'Dark Mode'}
+                  </div>
                 </div>
                 {isSelected && <Check className="w-4 h-4 text-theme-accent flex-shrink-0" />}
               </button>
             );
           })}
         </div>
+
+        {/* Winter Arc Atmospheric Controls */}
+        {currentTheme === 'winter-arc' && (
+          <div className="mt-4 p-4 rounded-2xl bg-dark-950 border border-theme-accent/30 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 rounded-xl overflow-hidden border border-theme-accent/40 shadow-glow-accent flex-shrink-0">
+                <img
+                  src="/winter-arc-bg.jpg"
+                  alt="Winter Arc Theme"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-theme-title flex items-center space-x-1.5">
+                  <Snowflake className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Winter Arc Atmosphere FX</span>
+                </div>
+                <div className="text-[11px] text-dark-400">
+                  Samurai mountain artwork with dynamic falling snow animation
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-dark-800">
+              <button
+                type="button"
+                onClick={handleToggleWallpaper}
+                className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-all ${
+                  winterWallpaper
+                    ? 'bg-dark-900 border-theme-accent text-theme-title'
+                    : 'bg-dark-950 border-dark-800 text-dark-500 hover:text-theme-title'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Image className="w-4 h-4 text-theme-accent" />
+                  <span>Samurai Wallpaper</span>
+                </div>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    winterWallpaper ? 'bg-theme-accent text-white' : 'bg-dark-800 text-dark-500'
+                  }`}
+                >
+                  {winterWallpaper ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleToggleSnow}
+                className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-all ${
+                  winterSnow
+                    ? 'bg-dark-900 border-theme-accent text-theme-title'
+                    : 'bg-dark-950 border-dark-800 text-dark-500 hover:text-theme-title'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Snowflake className="w-4 h-4 text-sky-400" />
+                  <span>Dynamic Falling Snow</span>
+                </div>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    winterSnow ? 'bg-theme-accent text-white' : 'bg-dark-800 text-dark-500'
+                  }`}
+                >
+                  {winterSnow ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Data Management */}

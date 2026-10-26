@@ -15,7 +15,14 @@ import {
 } from './services/syncAdapter';
 import { initStorage, setActiveUser } from './utils/storage';
 import type { ViewMode, Category, Task } from './types';
-import { getStoredTheme, applyTheme } from './utils/theme';
+import {
+  getStoredTheme,
+  applyTheme,
+  isWinterArcSnowEnabled,
+  isWinterArcWallpaperEnabled,
+  type ThemeId,
+} from './utils/theme';
+import { SnowEffect } from './components/common/SnowEffect';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { TodayView } from './components/today/TodayView';
@@ -34,6 +41,29 @@ const GOOGLE_CLIENT_ID = rawClientId || '87073790500-4ilmlvqndgk06pj6lgbds8lar1q
 
 const MainAppContent: React.FC = () => {
   const { user, loading } = useAuth();
+
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>(getStoredTheme());
+  const [showWinterSnow, setShowWinterSnow] = useState<boolean>(isWinterArcSnowEnabled());
+  const [showWinterWallpaper, setShowWinterWallpaper] = useState<boolean>(isWinterArcWallpaperEnabled());
+
+  useEffect(() => {
+    const handleThemeChange = (e: Event) => {
+      const customEvent = e as CustomEvent<ThemeId>;
+      if (customEvent.detail) {
+        setCurrentTheme(customEvent.detail);
+      }
+    };
+    const handleWinterFxChange = () => {
+      setShowWinterSnow(isWinterArcSnowEnabled());
+      setShowWinterWallpaper(isWinterArcWallpaperEnabled());
+    };
+    window.addEventListener('bromise-theme-change', handleThemeChange);
+    window.addEventListener('bromise-winter-fx-change', handleWinterFxChange);
+    return () => {
+      window.removeEventListener('bromise-theme-change', handleThemeChange);
+      window.removeEventListener('bromise-winter-fx-change', handleWinterFxChange);
+    };
+  }, []);
 
   const [currentView, setCurrentView] = useState<ViewMode>('today');
   const [selectedDate, setSelectedDate] = useState<string>(formatDateKey(new Date()));
@@ -231,7 +261,28 @@ const MainAppContent: React.FC = () => {
 
   // ─── RENDER ────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-dark-950 text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200">
+    <div
+      className={`min-h-screen text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200 relative ${
+        currentTheme === 'winter-arc' && showWinterWallpaper ? 'bg-transparent' : 'bg-dark-950'
+      }`}
+    >
+      {/* Winter Arc Atmospheric Samurai Background */}
+      {currentTheme === 'winter-arc' && showWinterWallpaper && (
+        <div
+          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700"
+          style={{
+            backgroundImage: 'url(/winter-arc-bg.jpg)',
+          }}
+        >
+          {/* Multi-layered dark vignette & gradient overlay ensuring 100% text clarity and component contrast */}
+          <div className="absolute inset-0 bg-dark-950/80" />
+          <div className="absolute inset-0 bg-gradient-to-t from-dark-950 via-dark-950/65 to-dark-950/80" />
+        </div>
+      )}
+
+      {/* Winter Arc Dynamic Falling Snow Animation */}
+      {currentTheme === 'winter-arc' && showWinterSnow && <SnowEffect />}
+
       {!serverOnline && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500/90 text-dark-950 text-xs font-bold text-center py-1 tracking-wide">
           ⚡ Offline mode — changes saved locally and will sync when server reconnects

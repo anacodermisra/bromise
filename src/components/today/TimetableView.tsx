@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { Task, Category, DailyPlanItem } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { TimeSlotModal } from './TimeSlotModal';
@@ -15,6 +15,7 @@ import {
   Sparkles,
   Plus,
   Layers,
+  GripVertical,
 } from 'lucide-react';
 
 interface ScheduledSlotData {
@@ -68,44 +69,504 @@ function timeToMinutes(timeStr: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-// Background Droppable Hour Row
+// Background Droppable Hour Row with 30-min precise sub-slots
 const BackgroundHourSlot: React.FC<{
   hour: string;
   hourHeight: number;
   isCurrentHour: boolean;
-  onAddSlotForHour: (hour: string) => void;
+  onAddSlotForHour: (timeStr: string) => void;
 }> = ({ hour, hourHeight, isCurrentHour, onAddSlotForHour }) => {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `hour-slot-${hour}`,
-    data: { timeSlot: hour },
+  const [h] = hour.split(':');
+  const topSlot = `${h}:00`;
+  const bottomSlot = `${h}:30`;
+
+  const { setNodeRef: setTopRef, isOver: isTopOver } = useDroppable({
+    id: `hour-slot-${topSlot}`,
+    data: { timeSlot: topSlot },
+  });
+
+  const { setNodeRef: setBottomRef, isOver: isBottomOver } = useDroppable({
+    id: `hour-slot-${bottomSlot}`,
+    data: { timeSlot: bottomSlot },
+  });
+
+  return (
+    <div
+      style={{ height: `${hourHeight}px` }}
+      className={`relative border-t border-dark-800/80 transition-colors group flex flex-col ${
+        isCurrentHour ? 'bg-theme-accent/5' : ''
+      }`}
+    >
+      {/* Top Half Droppable Zone (:00) */}
+      <div
+        ref={setTopRef}
+        style={{ height: `${hourHeight / 2}px` }}
+        className={`relative transition-all flex items-center justify-end pr-2.5 ${
+          isTopOver ? 'bg-theme-accent/25 ring-2 ring-inset ring-theme-accent z-10' : ''
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => onAddSlotForHour(topSlot)}
+          className="opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity flex items-center space-x-1 px-2 py-0.5 rounded-md bg-dark-850 hover:bg-dark-800 text-dark-300 hover:text-theme-title text-[10px] font-semibold border border-dark-750 shadow-sm z-10"
+          title={`Schedule at ${topSlot}`}
+        >
+          <Plus className="w-2.5 h-2.5 text-theme-accent" />
+          <span>{topSlot}</span>
+        </button>
+      </div>
+
+      {/* 30-minute faint divider line */}
+      <div className="border-t border-dashed border-dark-800/60 pointer-events-none" />
+
+      {/* Bottom Half Droppable Zone (:30) */}
+      <div
+        ref={setBottomRef}
+        style={{ height: `${hourHeight / 2}px` }}
+        className={`relative transition-all flex items-center justify-end pr-2.5 ${
+          isBottomOver ? 'bg-theme-accent/25 ring-2 ring-inset ring-theme-accent z-10' : ''
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => onAddSlotForHour(bottomSlot)}
+          className="opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity flex items-center space-x-1 px-2 py-0.5 rounded-md bg-dark-850 hover:bg-dark-800 text-dark-300 hover:text-theme-title text-[10px] font-semibold border border-dark-750 shadow-sm z-10"
+          title={`Schedule at ${bottomSlot}`}
+        >
+          <Plus className="w-2.5 h-2.5 text-theme-accent" />
+          <span>{bottomSlot}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Draggable Unscheduled Task Pill
+const DraggableUnscheduledTask: React.FC<{
+  task: Task;
+  category?: Category;
+  onScheduleClick: (task: Task) => void;
+}> = ({ task, category, onScheduleClick }) => {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `unscheduled-${task.id}`,
+    data: { task },
   });
 
   return (
     <div
       ref={setNodeRef}
-      style={{ height: `${hourHeight}px` }}
-      className={`relative border-t border-dark-800/80 transition-colors group ${
-        isCurrentHour ? 'bg-theme-accent/5' : ''
-      } ${isOver ? 'bg-theme-accent/15 ring-2 ring-theme-accent/50 z-10' : ''}`}
+      {...attributes}
+      {...listeners}
+      className={`flex items-center space-x-2 px-2.5 py-1.5 rounded-xl bg-dark-950 border border-dark-750 text-xs text-theme-title hover:border-theme-accent cursor-grab active:cursor-grabbing transition-all select-none shadow-sm ${
+        isDragging ? 'opacity-30 ring-2 ring-theme-accent' : 'hover:scale-[1.02]'
+      }`}
     >
-      {/* 30-minute faint half-hour guide line */}
-      <div
-        style={{ top: `${hourHeight / 2}px` }}
-        className="absolute left-0 right-0 border-t border-dashed border-dark-800/40 pointer-events-none"
-      />
+      <GripVertical className="w-3 h-3 text-dark-500" />
+      <span className="truncate max-w-[140px] font-medium">{task.title}</span>
+      {category && (
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: category.accent }}
+          title={category.name}
+        />
+      )}
+      <button
+        type="button"
+        onClick={e => {
+          e.stopPropagation();
+          onScheduleClick(task);
+        }}
+        onPointerDown={e => e.stopPropagation()}
+        className="ml-1 text-[10px] text-theme-accent hover:underline flex items-center space-x-0.5 px-1 py-0.5 rounded hover:bg-dark-850"
+        title="Assign custom time slot"
+      >
+        <Clock className="w-2.5 h-2.5" />
+        <span>Time</span>
+      </button>
+    </div>
+  );
+};
 
-      {/* Hover action to schedule directly on this hour */}
-      <div className="absolute right-3 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-        <button
-          type="button"
-          onClick={() => onAddSlotForHour(hour)}
-          className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-850 hover:bg-dark-800 text-dark-300 hover:text-theme-title text-[11px] font-semibold border border-dark-750 transition-all shadow-sm"
-          title={`Schedule slot for ${hour}`}
-        >
-          <Plus className="w-3 h-3 text-theme-accent" />
-          <span>Schedule {hour}</span>
-        </button>
-      </div>
+// Draggable & Proportional Timeline Scheduled Slot
+const TimelineSlotItem: React.FC<{
+  item: LayoutSlot;
+  isCompleted: boolean;
+  category?: Category;
+  onToggleComplete: (e: React.MouseEvent) => void;
+  onOpenEditSlot: () => void;
+  onDuplicateSlot: (task: Task) => void;
+  onRemoveFromTimeSlot: (planItemId: string) => void;
+  onOpenTaskModal: (task: Task) => void;
+  onDeleteTask: (taskId: string) => void;
+  onAdjustDuration: (task: Task, planItem: DailyPlanItem, delta: number) => void;
+  priorityColors: Record<string, string>;
+}> = ({
+  item,
+  isCompleted,
+  category,
+  onToggleComplete,
+  onOpenEditSlot,
+  onDuplicateSlot,
+  onRemoveFromTimeSlot,
+  onOpenTaskModal,
+  onDeleteTask,
+  onAdjustDuration,
+  priorityColors,
+}) => {
+  const { planItem, task, slotIndex, totalSlots } = item.slotData;
+  const startTimeDisplay = planItem.startTime || planItem.timeSlot || '09:00';
+  const endTimeDisplay = planItem.endTime;
+  const durationDisplay = planItem.durationMinutes || 60;
+
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `slot-${planItem.id}`,
+    data: { planItem, task },
+  });
+
+  const isShort = item.height < 44; // 15m - 25m
+  const isMedium = item.height >= 44 && item.height < 75; // 30m - 50m
+  const isTall = item.height >= 75; // 1h - 2h+
+
+  const accentColor = category?.accent || '#3b82f6';
+  const leftPercent = (item.colIndex / item.totalCols) * 100;
+  const widthPercent = 100 / item.totalCols;
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onOpenEditSlot}
+      style={{
+        top: `${item.top}px`,
+        height: `${item.height}px`,
+        left: `calc(${leftPercent}% + 3px)`,
+        width: `calc(${widthPercent}% - 6px)`,
+        backgroundColor: `${accentColor}18`,
+        borderLeftColor: accentColor,
+        borderColor: `${accentColor}40`,
+      }}
+      className={`absolute rounded-xl border border-l-4 p-2 transition-all duration-200 cursor-pointer overflow-hidden z-20 group hover:z-30 hover:shadow-xl hover:border-l-[5px] select-none ${
+        isCompleted ? 'opacity-60 bg-dark-950/60' : 'shadow-sm hover:brightness-110'
+      } ${isDragging ? 'opacity-30 ring-2 ring-theme-accent z-50' : ''}`}
+      title={`${task.title} (${startTimeDisplay} – ${endTimeDisplay || ''})`}
+    >
+      {/* Short Event (15m - 25m) */}
+      {isShort && (
+        <div className="h-full flex items-center justify-between space-x-1.5 text-xs -mt-1">
+          <div className="flex items-center space-x-1 min-w-0">
+            <div
+              {...attributes}
+              {...listeners}
+              onClick={e => e.stopPropagation()}
+              className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-theme-accent p-0.5"
+              title="Drag to reschedule"
+            >
+              <GripVertical className="w-3 h-3" />
+            </div>
+            <button
+              type="button"
+              onClick={onToggleComplete}
+              className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                isCompleted
+                  ? 'bg-emerald-500 border-emerald-500 text-dark-950'
+                  : 'border-dark-500 hover:border-theme-accent'
+              }`}
+            >
+              {isCompleted && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+            </button>
+            <span
+              className={`font-semibold truncate text-[11px] ${
+                isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+              }`}
+            >
+              {task.title}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-1 flex-shrink-0 text-[10px] font-mono text-dark-400">
+            <span>{startTimeDisplay}</span>
+            <span className="text-dark-500">({durationDisplay}m)</span>
+            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onAdjustDuration(task, planItem, 15);
+                }}
+                className="px-1 py-0.2 rounded bg-dark-950 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                title="Add 15m"
+              >
+                +15m
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Medium Event (30m - 50m) */}
+      {isMedium && (
+        <div className="h-full flex flex-col justify-between text-xs">
+          <div className="flex items-center justify-between space-x-1 min-w-0">
+            <div className="flex items-center space-x-1 min-w-0">
+              <div
+                {...attributes}
+                {...listeners}
+                onClick={e => e.stopPropagation()}
+                className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-theme-accent p-0.5"
+                title="Drag to reschedule"
+              >
+                <GripVertical className="w-3 h-3" />
+              </div>
+              <button
+                type="button"
+                onClick={onToggleComplete}
+                className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                  isCompleted
+                    ? 'bg-emerald-500 border-emerald-500 text-dark-950'
+                    : 'border-dark-500 hover:border-theme-accent'
+                }`}
+              >
+                {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+              </button>
+              <span
+                className={`font-semibold truncate text-xs ${
+                  isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+                }`}
+              >
+                {task.title}
+              </span>
+            </div>
+
+            {/* Hover Quick Actions */}
+            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onAdjustDuration(task, planItem, -15);
+                }}
+                className="px-1 py-0.2 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                title="Reduce 15 mins"
+              >
+                -15m
+              </button>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onAdjustDuration(task, planItem, 15);
+                }}
+                className="px-1 py-0.2 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                title="Add 15 mins"
+              >
+                +15m
+              </button>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onDuplicateSlot(task);
+                }}
+                className="p-0.5 rounded text-dark-400 hover:text-purple-400"
+                title="Add another slot today"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onRemoveFromTimeSlot(planItem.id);
+                }}
+                className="p-0.5 rounded text-dark-400 hover:text-amber-400"
+                title="Remove slot"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 text-[10px] font-mono text-dark-300">
+            <span className="flex items-center space-x-0.5">
+              <Clock className="w-2.5 h-2.5 text-theme-accent" />
+              <span>
+                {startTimeDisplay} – {endTimeDisplay}
+              </span>
+            </span>
+            <span className="text-dark-500">({durationDisplay}m)</span>
+            {totalSlots > 1 && (
+              <span className="text-purple-400 font-bold">
+                #{slotIndex}/{totalSlots}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tall Event (1h, 2h, 3h+) */}
+      {isTall && (
+        <div className="h-full flex flex-col justify-between text-xs space-y-1.5">
+          <div className="space-y-1">
+            <div className="flex items-start justify-between space-x-1">
+              <div className="flex items-center space-x-1.5 min-w-0">
+                <div
+                  {...attributes}
+                  {...listeners}
+                  onClick={e => e.stopPropagation()}
+                  className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-theme-accent p-0.5"
+                  title="Drag to reschedule"
+                >
+                  <GripVertical className="w-3.5 h-3.5" />
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggleComplete}
+                  className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-colors ${
+                    isCompleted
+                      ? 'bg-emerald-500 border-emerald-500 text-dark-950 shadow-glow-emerald'
+                      : 'border-dark-500 hover:border-theme-accent'
+                  }`}
+                >
+                  {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                </button>
+                <span
+                  className={`font-bold truncate text-xs sm:text-sm ${
+                    isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+                  }`}
+                >
+                  {task.title}
+                </span>
+              </div>
+
+              {/* Action icons */}
+              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onAdjustDuration(task, planItem, -15);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                  title="Reduce 15 mins"
+                >
+                  -15m
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onAdjustDuration(task, planItem, 15);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                  title="Add 15 mins"
+                >
+                  +15m
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onDuplicateSlot(task);
+                  }}
+                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-purple-400"
+                  title="Add another slot today"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onOpenTaskModal(task);
+                  }}
+                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title"
+                  title="Edit task details"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onRemoveFromTimeSlot(planItem.id);
+                  }}
+                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-amber-400"
+                  title="Remove slot"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    onDeleteTask(task.id);
+                  }}
+                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-rose-400"
+                  title="Delete task"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Metadata badges: Category, Multi-slot, Priority */}
+            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+              {totalSlots > 1 && (
+                <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  <Layers className="w-2.5 h-2.5" />
+                  <span>
+                    Slot {slotIndex} of {totalSlots}
+                  </span>
+                </span>
+              )}
+
+              {category && (
+                <span
+                  className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[9px] font-semibold border"
+                  style={{
+                    backgroundColor: `${category.accent}20`,
+                    color: category.accent,
+                    borderColor: `${category.accent}40`,
+                  }}
+                >
+                  <IconHelper
+                    name={category.icon}
+                    className="w-2.5 h-2.5"
+                    style={{ color: category.accent }}
+                  />
+                  <span>{category.name}</span>
+                </span>
+              )}
+
+              <span
+                className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border uppercase tracking-wider ${
+                  priorityColors[task.priority]
+                }`}
+              >
+                {task.priority}
+              </span>
+            </div>
+
+            {task.notes && (
+              <p className="text-[11px] text-dark-400 line-clamp-2 italic">
+                {task.notes}
+              </p>
+            )}
+          </div>
+
+          {/* Bottom Time Pill */}
+          <div className="flex items-center justify-between pt-1 border-t border-dark-800/40 text-[10px] font-mono">
+            <span className="flex items-center space-x-1 text-theme-accent font-bold">
+              <Clock className="w-3 h-3" />
+              <span>
+                {startTimeDisplay} – {endTimeDisplay}
+              </span>
+            </span>
+            <span className="text-dark-400 px-1.5 py-0.2 rounded bg-dark-950/60 border border-dark-800">
+              {durationDisplay} mins
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -363,6 +824,18 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
     onAssignTimeSlot(taskId, startTime, durationMinutes, endTime, planItemId);
   };
 
+  const handleAdjustDuration = (task: Task, planItem: DailyPlanItem, delta: number) => {
+    const curDur = planItem.durationMinutes || 60;
+    const newDur = Math.max(15, Math.min(720, curDur + delta));
+    onAssignTimeSlot(
+      task.id,
+      planItem.startTime || planItem.timeSlot || '09:00',
+      newDur,
+      undefined,
+      planItem.id
+    );
+  };
+
   const priorityColors = {
     low: 'bg-dark-800 text-dark-500 border-dark-750',
     medium: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
@@ -499,28 +972,12 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
             {unassignedTasks.map(task => {
               const cat = categories.find(c => c.id === task.categoryId);
               return (
-                <div
+                <DraggableUnscheduledTask
                   key={task.id}
-                  className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg bg-dark-950 border border-dark-750 text-xs text-theme-title hover:border-theme-accent transition-colors"
-                >
-                  <span className="truncate max-w-[140px] font-medium">{task.title}</span>
-                  {cat && (
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: cat.accent }}
-                      title={cat.name}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleScheduleUnassignedTask(task)}
-                    className="ml-1 text-[10px] text-theme-accent hover:underline flex items-center space-x-0.5"
-                    title="Assign custom time slot"
-                  >
-                    <Clock className="w-2.5 h-2.5" />
-                    <span>Time</span>
-                  </button>
-                </div>
+                  task={task}
+                  category={cat}
+                  onScheduleClick={handleScheduleUnassignedTask}
+                />
               );
             })}
           </div>
@@ -605,22 +1062,12 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
 
             {/* Proportional Scheduled Event Blocks (Google Calendar Style) */}
             {layoutSlots.map(item => {
-              const { planItem, task, slotIndex, totalSlots } = item.slotData;
+              const { planItem, task } = item.slotData;
               const category = categories.find(c => c.id === task.categoryId);
               const isCompleted =
                 planItem.completed !== undefined
                   ? planItem.completed
                   : !!completions[task.id];
-
-              const startTimeDisplay = planItem.startTime || planItem.timeSlot || '09:00';
-              const endTimeDisplay = planItem.endTime;
-              const durationDisplay = planItem.durationMinutes || 60;
-
-              const isShort = item.height < 40; // 15m - 25m
-              const isMedium = item.height >= 40 && item.height < 70; // 30m - 50m
-              const isTall = item.height >= 70; // 1h - 2h+
-
-              const accentColor = category?.accent || '#3b82f6';
 
               const handleToggle = (e: React.MouseEvent) => {
                 e.stopPropagation();
@@ -631,262 +1078,21 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                 }
               };
 
-              const leftPercent = (item.colIndex / item.totalCols) * 100;
-              const widthPercent = 100 / item.totalCols;
-
               return (
-                <div
+                <TimelineSlotItem
                   key={item.id}
-                  onClick={() => handleOpenEditSlot(planItem, task)}
-                  style={{
-                    top: `${item.top}px`,
-                    height: `${item.height}px`,
-                    left: `calc(${leftPercent}% + 3px)`,
-                    width: `calc(${widthPercent}% - 6px)`,
-                    backgroundColor: `${accentColor}18`,
-                    borderLeftColor: accentColor,
-                    borderColor: `${accentColor}40`,
-                  }}
-                  className={`absolute rounded-xl border border-l-4 p-2 transition-all duration-200 cursor-pointer overflow-hidden z-20 group hover:z-30 hover:shadow-xl hover:border-l-[5px] ${
-                    isCompleted ? 'opacity-60 bg-dark-950/60' : 'shadow-sm hover:brightness-110'
-                  }`}
-                  title={`${task.title} (${startTimeDisplay} – ${endTimeDisplay || ''})`}
-                >
-                  {/* Ultra Short Event (15m - 25m) */}
-                  {isShort && (
-                    <div className="h-full flex items-center justify-between space-x-1.5 text-xs -mt-1">
-                      <div className="flex items-center space-x-1.5 min-w-0">
-                        <button
-                          type="button"
-                          onClick={handleToggle}
-                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                            isCompleted
-                              ? 'bg-emerald-500 border-emerald-500 text-dark-950'
-                              : 'border-dark-500 hover:border-theme-accent'
-                          }`}
-                        >
-                          {isCompleted && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                        </button>
-                        <span
-                          className={`font-semibold truncate text-[11px] ${
-                            isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
-                          }`}
-                        >
-                          {task.title}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1 flex-shrink-0 text-[10px] font-mono text-dark-400">
-                        <span>{startTimeDisplay}</span>
-                        <span className="text-dark-500">({durationDisplay}m)</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Medium Event (30m - 50m) */}
-                  {isMedium && (
-                    <div className="h-full flex flex-col justify-between text-xs">
-                      <div className="flex items-center justify-between space-x-1 min-w-0">
-                        <div className="flex items-center space-x-1.5 min-w-0">
-                          <button
-                            type="button"
-                            onClick={handleToggle}
-                            className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                              isCompleted
-                                ? 'bg-emerald-500 border-emerald-500 text-dark-950'
-                                : 'border-dark-500 hover:border-theme-accent'
-                            }`}
-                          >
-                            {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
-                          </button>
-                          <span
-                            className={`font-semibold truncate text-xs ${
-                              isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
-                            }`}
-                          >
-                            {task.title}
-                          </span>
-                        </div>
-
-                        {/* Hover Quick Actions */}
-                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              handleDuplicateSlot(task);
-                            }}
-                            className="p-0.5 rounded text-dark-400 hover:text-purple-400"
-                            title="Add another slot today"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              onRemoveFromTimeSlot(planItem.id);
-                            }}
-                            className="p-0.5 rounded text-dark-400 hover:text-amber-400"
-                            title="Remove slot"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2 text-[10px] font-mono text-dark-300">
-                        <span className="flex items-center space-x-0.5">
-                          <Clock className="w-2.5 h-2.5 text-theme-accent" />
-                          <span>
-                            {startTimeDisplay} – {endTimeDisplay}
-                          </span>
-                        </span>
-                        <span className="text-dark-500">({durationDisplay}m)</span>
-                        {totalSlots > 1 && (
-                          <span className="text-purple-400 font-bold">
-                            #{slotIndex}/{totalSlots}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tall Event (1h, 2h, 3h+) */}
-                  {isTall && (
-                    <div className="h-full flex flex-col justify-between text-xs space-y-1.5">
-                      <div className="space-y-1">
-                        <div className="flex items-start justify-between space-x-1">
-                          <div className="flex items-center space-x-2 min-w-0">
-                            <button
-                              type="button"
-                              onClick={handleToggle}
-                              className={`w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-colors ${
-                                isCompleted
-                                  ? 'bg-emerald-500 border-emerald-500 text-dark-950 shadow-glow-emerald'
-                                  : 'border-dark-500 hover:border-theme-accent'
-                              }`}
-                            >
-                              {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
-                            </button>
-                            <span
-                              className={`font-bold truncate text-xs sm:text-sm ${
-                                isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
-                              }`}
-                            >
-                              {task.title}
-                            </span>
-                          </div>
-
-                          {/* Action icons */}
-                          <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                handleDuplicateSlot(task);
-                              }}
-                              className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-purple-400"
-                              title="Add another slot today"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onOpenTaskModal(task);
-                              }}
-                              className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title"
-                              title="Edit task details"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onRemoveFromTimeSlot(planItem.id);
-                              }}
-                              className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-amber-400"
-                              title="Remove slot"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onDeleteTask(task.id);
-                              }}
-                              className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-rose-400"
-                              title="Delete task"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Metadata badges: Category, Multi-slot, Priority */}
-                        <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                          {totalSlots > 1 && (
-                            <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              <Layers className="w-2.5 h-2.5" />
-                              <span>
-                                Slot {slotIndex} of {totalSlots}
-                              </span>
-                            </span>
-                          )}
-
-                          {category && (
-                            <span
-                              className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[9px] font-semibold border"
-                              style={{
-                                backgroundColor: `${category.accent}20`,
-                                color: category.accent,
-                                borderColor: `${category.accent}40`,
-                              }}
-                            >
-                              <IconHelper
-                                name={category.icon}
-                                className="w-2.5 h-2.5"
-                                style={{ color: category.accent }}
-                              />
-                              <span>{category.name}</span>
-                            </span>
-                          )}
-
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border uppercase tracking-wider ${
-                              priorityColors[task.priority]
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
-                        </div>
-
-                        {task.notes && (
-                          <p className="text-[11px] text-dark-400 line-clamp-2 italic">
-                            {task.notes}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Bottom Time Pill */}
-                      <div className="flex items-center justify-between pt-1 border-t border-dark-800/40 text-[10px] font-mono">
-                        <span className="flex items-center space-x-1 text-theme-accent font-bold">
-                          <Clock className="w-3 h-3" />
-                          <span>
-                            {startTimeDisplay} – {endTimeDisplay}
-                          </span>
-                        </span>
-                        <span className="text-dark-400 px-1.5 py-0.2 rounded bg-dark-950/60 border border-dark-800">
-                          {durationDisplay} mins
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  item={item}
+                  isCompleted={isCompleted}
+                  category={category}
+                  onToggleComplete={handleToggle}
+                  onOpenEditSlot={() => handleOpenEditSlot(planItem, task)}
+                  onDuplicateSlot={handleDuplicateSlot}
+                  onRemoveFromTimeSlot={onRemoveFromTimeSlot}
+                  onOpenTaskModal={onOpenTaskModal}
+                  onDeleteTask={onDeleteTask}
+                  onAdjustDuration={handleAdjustDuration}
+                  priorityColors={priorityColors}
+                />
               );
             })}
           </div>
