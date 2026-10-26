@@ -8,7 +8,7 @@ import {
   syncAddCategory, syncUpdateCategory, syncDeleteCategory,
   syncAddTask, syncUpdateTask, syncDeleteTask,
   syncAddToToday, syncRemoveFromToday, syncReorderToday,
-  syncAssignTimeSlot, syncRemoveTimeSlot,
+  syncAssignTimeSlot, syncRemoveTimeSlot, syncTogglePlanItemCompletion,
   syncToggleCompletion,
   getDayStats, formatDateKey, initSync, isServerOnline,
   resetData, pullFromServer
@@ -163,13 +163,24 @@ const MainAppContent: React.FC = () => {
     reloadLocalData();
   };
 
-  const handleAssignTimeSlot = async (taskId: string, timeSlot: string) => {
-    await syncAssignTimeSlot(selectedDate, taskId, timeSlot);
+  const handleAssignTimeSlot = async (
+    taskId: string,
+    startTime: string,
+    durationMinutes: number = 60,
+    endTime?: string,
+    planItemId?: string
+  ) => {
+    await syncAssignTimeSlot(selectedDate, taskId, startTime, durationMinutes, endTime, planItemId);
     reloadLocalData();
   };
 
-  const handleRemoveTimeSlot = async (taskId: string) => {
-    await syncRemoveTimeSlot(selectedDate, taskId);
+  const handleRemoveTimeSlot = async (planItemIdOrTaskId: string) => {
+    await syncRemoveTimeSlot(planItemIdOrTaskId);
+    reloadLocalData();
+  };
+
+  const handleTogglePlanSlotComplete = async (planItemId: string) => {
+    await syncTogglePlanItemCompletion(planItemId);
     reloadLocalData();
   };
 
@@ -269,6 +280,7 @@ const MainAppContent: React.FC = () => {
               onReorderToday={handleReorderToday}
               onAssignTimeSlot={handleAssignTimeSlot}
               onRemoveTimeSlot={handleRemoveTimeSlot}
+              onTogglePlanSlotComplete={handleTogglePlanSlotComplete}
               onOpenTaskModal={task => {
                 setEditingTask(task || null);
                 setIsTaskModalOpen(true);

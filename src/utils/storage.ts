@@ -228,50 +228,169 @@ export function reorderDailyPlan(dateStr: string, reorderedTaskIds: string[]) {
   const otherPlans = allPlans.filter(p => p.date !== dateStr);
   const targetPlans = allPlans.filter(p => p.date === dateStr);
 
-  const updatedTargetPlans = reorderedTaskIds.map((taskId, idx) => {
-    const existing = targetPlans.find(p => p.taskId === taskId);
-    if (existing) return { ...existing, position: idx };
-    return {
-      id: `plan-${dateStr}-${taskId}`,
-      date: dateStr,
-      taskId,
-      position: idx,
-      sourceType: 'normal' as const,
-    };
+  // Preserve all slots for each task while updating positions
+  const updatedTargetPlans: DailyPlanItem[] = [];
+  reorderedTaskIds.forEach((taskId, idx) => {
+    const slotsForTask = targetPlans.filter(p => p.taskId === taskId);
+    if (slotsForTask.length > 0) {
+      slotsForTask.forEach(slot => {
+        updatedTargetPlans.push({ ...slot, position: idx });
+      });
+    } else {
+      updatedTargetPlans.push({
+        id: `plan-${dateStr}-${taskId}`,
+        date: dateStr,
+        taskId,
+        position: idx,
+        sourceType: 'normal',
+      });
+    }
   });
 
   saveDailyPlans([...otherPlans, ...updatedTargetPlans]);
 }
 
-export function assignTaskToTimeSlot(dateStr: string, taskId: string, timeSlot: string) {
+export function calculateEndTime(startTime: string, durationMinutes: number): string {
+  const parts = startTime.split(':');
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  const totalMins = h * 60 + m + durationMinutes;
+  const endH = Math.floor(totalMins / 60) % 24;
+  const endM = totalMins % 60;
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${pad(endH)}:${pad(endM)}`;
+}
+
+export function calculateDurationMinutes(startTime: string, endTime: string): number {
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  let startTotal = (sh || 0) * 60 + (sm || 0);
+  let endTotal = (eh || 0) * 60 + (em || 0);
+  if (endTotal < startTotal) {
+    endTotal += 24 * 60; // Spans past midnight
+  }
+  return Math.max(15, endTotal - startTotal);
+}
+
+export function assignTaskToTimeSlot(
+  dateStr: string,
+  taskId: string,
+  startTime: string,
+  durationMinutes: number = 60,
+  endTime?: string,
+  planItemId?: string
+): DailyPlanItem {
   const allPlans = getDailyPlans();
-  const existing = allPlans.find(p => p.date === dateStr && p.taskId === taskId);
-  if (existing) {
+  const calculatedEnd = endTime || calculateEndTime(startTime, durationMinutes);
+
+  // 1. If an existing planItemId is specified, update that exact slot
+  if (planItemId) {
+    const existingIndex = allPlans.findIndex(p => p.id === planItemId);
+    if (existingIndex !== -1) {
+      const updatedItem: DailyPlanItem = {
+        ...allPlans[existingIndex],
+        startTime,
+        endTime: calculatedEnd,
+        durationMinutes,
+        timeSlot: startTime,
+      };
+      allPlans[existingIndex] = updatedItem;
+      saveDailyPlans([...allPlans]);
+      return updatedItem;
+    }
+  }
+
+  // 2. If no planItemId, check if there's an unassigned plan item for this task on this date
+  const unassignedIndex = allPlans.findIndex(
+    p => p.date === dateStr && p.taskId === taskId && !p.startTime && !p.timeSlot
+  );
+
+  if (unassignedIndex !== -1) {
+    const updatedItem: DailyPlanItem = {
+      ...allPlans[unassignedIndex],
+      startTime,
+      endTime: calculatedEnd,
+      durationMinutes,
+      timeSlot: startTime,
+    };
+    allPlans[unassignedIndex] = updatedItem;
+    saveDailyPlans([...allPlans]);
+    return updatedItem;
+  }
+
+  // 3. Otherwise, create a NEW time slot for this task on this date (supports multi-slot per day!)
+  const datePlans = allPlans.filter(p => p.date === dateStr);
+  const maxPos = datePlans.length > 0 ? Math.max(...datePlans.map(p => p.position)) + 1 : 0;
+  const newItem: DailyPlanItem = {
+    id: `slot-${dateStr}-${taskId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    date: dateStr,
+    taskId,
+    position: maxPos,
+    sourceType: 'normal',
+    startTime,
+    endTime: calculatedEnd,
+    durationMinutes,
+    timeSlot: startTime,
+  };
+
+  saveDailyPlans([...allPlans, newItem]);
+  return newItem;
+}
+
+export function removeTaskTimeSlot(targetIdOrDate: string, taskId?: string) {
+  const allPlans = getDailyPlans();
+
+  let planItemId = '';
+  if (taskId) {
+    const dateStr = targetIdOrDate;
+    const found = allPlans.find(
+      p => p.date === dateStr && p.taskId === taskId && (p.startTime || p.timeSlot)
+    );
+    if (found) planItemId = found.id;
+  } else {
+    planItemId = targetIdOrDate;
+  }
+
+  if (!planItemId) return;
+  const target = allPlans.find(p => p.id === planItemId);
+  if (!target) return;
+
+  // Check how many slots this task has on this date
+  const slotsForTask = allPlans.filter(
+    p => p.date === target.date && p.taskId === target.taskId
+  );
+
+  if (slotsForTask.length > 1) {
+    // If there were multiple slots, remove just this one
+    saveDailyPlans(allPlans.filter(p => p.id !== planItemId));
+  } else {
+    // If this was the only slot, clear the time fields so the task stays in today's plan
     const updated = allPlans.map(p =>
-      p.date === dateStr && p.taskId === taskId ? { ...p, timeSlot } : p
+      p.id === planItemId
+        ? {
+            ...p,
+            startTime: undefined,
+            endTime: undefined,
+            durationMinutes: undefined,
+            timeSlot: undefined,
+          }
+        : p
     );
     saveDailyPlans(updated);
-  } else {
-    const datePlans = allPlans.filter(p => p.date === dateStr);
-    const maxPos = datePlans.length > 0 ? Math.max(...datePlans.map(p => p.position)) + 1 : 0;
-    const newItem: DailyPlanItem = {
-      id: `plan-${dateStr}-${taskId}`,
-      date: dateStr,
-      taskId,
-      position: maxPos,
-      sourceType: 'normal',
-      timeSlot,
-    };
-    saveDailyPlans([...allPlans, newItem]);
   }
 }
 
-export function removeTaskTimeSlot(dateStr: string, taskId: string) {
+export function togglePlanItemCompletion(planItemId: string): boolean {
   const allPlans = getDailyPlans();
+  const target = allPlans.find(p => p.id === planItemId);
+  if (!target) return false;
+
+  const newStatus = !target.completed;
   const updated = allPlans.map(p =>
-    p.date === dateStr && p.taskId === taskId ? { ...p, timeSlot: undefined } : p
+    p.id === planItemId ? { ...p, completed: newStatus } : p
   );
   saveDailyPlans(updated);
+  return newStatus;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -331,13 +450,30 @@ export function getDayStats(dateStr: string) {
   const categories = getCategories();
 
   const validPlanItems = plan.filter(item => tasks.some(t => t.id === item.taskId));
-  const plannedCount = validPlanItems.length;
+  
+  // Deduplicate unique tasks for the day:
+  // Multiple time slots of the same activity constitute ONE task in the stats & add-ups!
+  const uniqueTaskIds: string[] = [];
+  validPlanItems.forEach(item => {
+    if (!uniqueTaskIds.includes(item.taskId)) {
+      uniqueTaskIds.push(item.taskId);
+    }
+  });
+
+  const plannedCount = uniqueTaskIds.length;
   let completedCount = 0;
   const categoriesSet = new Set<string>();
 
-  validPlanItems.forEach(item => {
-    if (isTaskCompletedOnDate(item.taskId, dateStr)) completedCount++;
-    const task = tasks.find(t => t.id === item.taskId);
+  uniqueTaskIds.forEach(taskId => {
+    const taskSlots = validPlanItems.filter(p => p.taskId === taskId);
+    // Task is completed if marked complete in completions OR if all its scheduled slots are done
+    const isCompleted =
+      isTaskCompletedOnDate(taskId, dateStr) ||
+      (taskSlots.length > 0 && taskSlots.every(s => s.completed));
+
+    if (isCompleted) completedCount++;
+
+    const task = tasks.find(t => t.id === taskId);
     if (task) {
       const cat = categories.find(c => c.id === task.categoryId);
       if (cat) categoriesSet.add(cat.name);

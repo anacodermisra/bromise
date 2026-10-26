@@ -30,6 +30,7 @@ import {
   getDailyPlans, saveDailyPlans, addTasksToDailyPlan as lsAddToPlan,
   removeTaskFromDailyPlan as lsRemoveFromPlan, reorderDailyPlan as lsReorder,
   getOrInitDailyPlan, assignTaskToTimeSlot as lsAssignTimeSlot, removeTaskTimeSlot as lsRemoveTimeSlot,
+  togglePlanItemCompletion as lsTogglePlanItemCompletion,
   getCompletions, saveCompletions, toggleTaskCompletion as lsToggle,
   getDayStats, getHeatmapData, getStreakInfo,
   exportDataJSON, importDataJSON, resetToSeedData,
@@ -128,6 +129,38 @@ async function executeOp(op: SyncOp) {
       break;
     }
     case 'REORDER_PLANS':   await api.reorderPlans(p.date, p.orderedTaskIds); break;
+    case 'ASSIGN_TIME_SLOT': {
+      if (p.planItemId) {
+        await api.updatePlan(p.planItemId, {
+          startTime: p.startTime,
+          endTime: p.endTime,
+          durationMinutes: p.durationMinutes,
+        });
+      } else {
+        await api.createPlan({
+          id: p.id,
+          taskId: p.taskId,
+          date: p.date,
+          startTime: p.startTime,
+          endTime: p.endTime,
+          durationMinutes: p.durationMinutes,
+          timeSlot: p.startTime,
+        });
+      }
+      break;
+    }
+    case 'REMOVE_TIME_SLOT': {
+      if (p.planItemId) {
+        await api.deletePlan(p.planItemId);
+      }
+      break;
+    }
+    case 'TOGGLE_PLAN_ITEM_COMPLETION': {
+      if (p.planItemId) {
+        await api.updatePlan(p.planItemId, { completed: p.completed });
+      }
+      break;
+    }
     case 'TOGGLE_COMPLETION': await api.toggleCompletion(p.taskId, p.date); break;
     case 'IMPORT_DATA':     await api.importData(p); break;
     default: console.warn('[sync] Unknown op type:', op.type);
@@ -295,14 +328,40 @@ export async function syncReorderToday(date: string, orderedTaskIds: string[]): 
   await trySync(() => {}, 'REORDER_PLANS', { date, orderedTaskIds });
 }
 
-export async function syncAssignTimeSlot(date: string, taskId: string, timeSlot: string): Promise<void> {
-  lsAssignTimeSlot(date, taskId, timeSlot);
-  await trySync(() => {}, 'ASSIGN_TIME_SLOT', { date, taskId, timeSlot });
+export async function syncAssignTimeSlot(
+  date: string,
+  taskId: string,
+  startTime: string,
+  durationMinutes: number = 60,
+  endTime?: string,
+  planItemId?: string
+): Promise<DailyPlanItem> {
+  const item = lsAssignTimeSlot(date, taskId, startTime, durationMinutes, endTime, planItemId);
+  await trySync(() => {}, 'ASSIGN_TIME_SLOT', {
+    id: item.id,
+    date,
+    taskId,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    durationMinutes: item.durationMinutes,
+    planItemId: item.id,
+  });
+  return item;
 }
 
-export async function syncRemoveTimeSlot(date: string, taskId: string): Promise<void> {
-  lsRemoveTimeSlot(date, taskId);
-  await trySync(() => {}, 'REMOVE_TIME_SLOT', { date, taskId });
+export async function syncRemoveTimeSlot(planItemIdOrDate: string, taskId?: string): Promise<void> {
+  lsRemoveTimeSlot(planItemIdOrDate, taskId);
+  await trySync(() => {}, 'REMOVE_TIME_SLOT', {
+    planItemId: taskId ? undefined : planItemIdOrDate,
+    date: taskId ? planItemIdOrDate : undefined,
+    taskId,
+  });
+}
+
+export async function syncTogglePlanItemCompletion(planItemId: string): Promise<boolean> {
+  const result = lsTogglePlanItemCompletion(planItemId);
+  await trySync(() => {}, 'TOGGLE_PLAN_ITEM_COMPLETION', { planItemId, completed: result });
+  return result;
 }
 
 // ─── COMPLETIONS ──────────────────────────────────────────

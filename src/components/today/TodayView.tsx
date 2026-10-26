@@ -49,8 +49,9 @@ interface TodayViewProps {
   onRemoveFromToday: (taskId: string) => void;
   onAddToToday: (taskId: string) => void;
   onReorderToday: (taskIds: string[]) => void;
-  onAssignTimeSlot?: (taskId: string, timeSlot: string) => void;
-  onRemoveTimeSlot?: (taskId: string) => void;
+  onAssignTimeSlot?: (taskId: string, startTime: string, durationMinutes?: number, endTime?: string, planItemId?: string) => void;
+  onRemoveTimeSlot?: (planItemIdOrTaskId: string) => void;
+  onTogglePlanSlotComplete?: (planItemId: string) => void;
   onOpenTaskModal: (task?: Task) => void;
   onDeleteTask: (taskId: string) => void;
   onChangeDate?: (date: string) => void;
@@ -109,6 +110,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onReorderToday,
   onAssignTimeSlot,
   onRemoveTimeSlot,
+  onTogglePlanSlotComplete,
   onOpenTaskModal,
   onDeleteTask,
   onChangeDate,
@@ -210,7 +212,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
       const timeSlot = overId.replace('hour-slot-', '');
       const actualTaskId = activeId.startsWith('backlog-') ? activeId.replace('backlog-', '') : activeId;
       if (onAssignTimeSlot) {
-        onAssignTimeSlot(actualTaskId, timeSlot);
+        onAssignTimeSlot(actualTaskId, timeSlot, 60);
       }
       return;
     }
@@ -439,7 +441,11 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 categories={categories}
                 completions={completions}
                 onToggleComplete={handleToggleCompleteWithConfetti}
-                onRemoveFromTimeSlot={taskId => (onRemoveTimeSlot ? onRemoveTimeSlot(taskId) : onRemoveFromToday(taskId))}
+                onTogglePlanSlotComplete={onTogglePlanSlotComplete}
+                onAssignTimeSlot={(taskId, startTime, durationMinutes, endTime, planItemId) => {
+                  if (onAssignTimeSlot) onAssignTimeSlot(taskId, startTime, durationMinutes, endTime, planItemId);
+                }}
+                onRemoveFromTimeSlot={id => (onRemoveTimeSlot ? onRemoveTimeSlot(id) : onRemoveFromToday(id))}
                 onOpenTaskModal={onOpenTaskModal}
                 onDeleteTask={onDeleteTask}
               />
@@ -459,8 +465,10 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   {todayTasks.map(task => {
                     const category = categories.find(c => c.id === task.categoryId);
                     const isCompleted = !!completions[task.id];
+                    const taskSlots = todayPlan.filter(p => p.taskId === task.id && (p.startTime || p.timeSlot));
                     return (
                       <TodayTaskItem
+                        timeSlots={taskSlots}
                         key={task.id}
                         task={task}
                         category={category}

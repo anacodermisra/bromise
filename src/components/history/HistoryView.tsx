@@ -182,58 +182,80 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ categories, tasks }) =
           )}
 
           <div className="space-y-3">
-            <label className="text-[11px] font-bold text-dark-500 uppercase tracking-wider">
-              Planned Task Items ({planItems.length})
-            </label>
+            {/* Deduplicated unique tasks for historical date */}
+            {(() => {
+              const uniqueTaskIds: string[] = [];
+              planItems.forEach(p => {
+                if (!uniqueTaskIds.includes(p.taskId)) {
+                  uniqueTaskIds.push(p.taskId);
+                }
+              });
 
-            {planItems.length === 0 ? (
-              <div className="p-6 rounded-2xl bg-dark-950 border border-dark-800 text-center text-xs text-dark-500">
-                No tasks were planned for this date.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                {planItems.map(item => {
-                  const task = tasks.find(t => t.id === item.taskId);
-                  const isDone = isTaskCompletedOnDate(item.taskId, selectedDate);
-                  const cat = task ? categories.find(c => c.id === task.categoryId) : undefined;
+              return (
+                <>
+                  <label className="text-[11px] font-bold text-dark-500 uppercase tracking-wider block">
+                    Planned Task Items ({uniqueTaskIds.length})
+                  </label>
 
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-colors ${
-                        isDone
-                          ? 'bg-dark-950 border-dark-850 text-dark-400'
-                          : 'bg-dark-950 border-dark-800 text-theme-title'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2 min-w-0">
-                        {isDone ? (
-                          <CheckCircle2 className="w-4 h-4 text-theme-accent-secondary flex-shrink-0" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-dark-600 flex-shrink-0" />
-                        )}
-                        <span className={`font-semibold truncate ${isDone ? 'line-through' : ''}`}>
-                          {task ? task.title : 'Deleted Task'}
-                        </span>
-                      </div>
-
-                      {cat && (
-                        <span
-                          className="px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0"
-                          style={{
-                            backgroundColor: `${cat.accent}15`,
-                            color: cat.accent,
-                            borderColor: `${cat.accent}30`,
-                          }}
-                        >
-                          {cat.name}
-                        </span>
-                      )}
+                  {uniqueTaskIds.length === 0 ? (
+                    <div className="p-6 rounded-2xl bg-dark-950 border border-dark-800 text-center text-xs text-dark-500">
+                      No tasks were planned for this date.
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                      {uniqueTaskIds.map(taskId => {
+                        const task = tasks.find(t => t.id === taskId);
+                        const isDone = isTaskCompletedOnDate(taskId, selectedDate);
+                        const cat = task ? categories.find(c => c.id === task.categoryId) : undefined;
+                        const taskSlots = planItems.filter(p => p.taskId === taskId && (p.startTime || p.timeSlot));
+
+                        return (
+                          <div
+                            key={taskId}
+                            className={`p-3 rounded-2xl border flex items-center justify-between text-xs transition-colors ${
+                              isDone
+                                ? 'bg-dark-950 border-dark-850 text-dark-400'
+                                : 'bg-dark-950 border-dark-800 text-theme-title'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2 min-w-0">
+                              {isDone ? (
+                                <CheckCircle2 className="w-4 h-4 text-theme-accent-secondary flex-shrink-0" />
+                              ) : (
+                                <XCircle className="w-4 h-4 text-dark-600 flex-shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <span className={`font-semibold truncate block ${isDone ? 'line-through' : ''}`}>
+                                  {task ? task.title : 'Deleted Task'}
+                                </span>
+                                {taskSlots.length > 0 && (
+                                  <span className="text-[10px] font-mono text-dark-500">
+                                    {taskSlots.map(s => `${s.startTime || s.timeSlot}${s.endTime ? `-${s.endTime}` : ''}`).join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {cat && (
+                              <span
+                                className="px-2 py-0.5 rounded text-[10px] font-semibold border flex-shrink-0"
+                                style={{
+                                  backgroundColor: `${cat.accent}15`,
+                                  color: cat.accent,
+                                  borderColor: `${cat.accent}30`,
+                                }}
+                              >
+                                {cat.name}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

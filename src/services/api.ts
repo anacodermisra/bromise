@@ -75,8 +75,25 @@ export const api = {
   // Plans
   getPlans: (date?: string) =>
     req<any[]>('GET', date ? `/plans?date=${date}` : '/plans'),
-  createPlan: (data: { taskId: string; date: string; position?: number; sourceType?: string }) =>
-    req<any>('POST', '/plans', data),
+  createPlan: (data: {
+    id?: string;
+    taskId: string;
+    date: string;
+    position?: number;
+    sourceType?: string;
+    startTime?: string;
+    endTime?: string;
+    durationMinutes?: number;
+    timeSlot?: string;
+    completed?: boolean;
+  }) => req<any>('POST', '/plans', data),
+  updatePlan: (id: string, data: {
+    startTime?: string | null;
+    endTime?: string | null;
+    durationMinutes?: number;
+    timeSlot?: string | null;
+    completed?: boolean;
+  }) => req<any>('PUT', `/plans/${id}`, data),
   deletePlan: (id: string) => req<any>('DELETE', `/plans/${id}`),
   reorderPlans: (date: string, orderedTaskIds: string[]) =>
     req<any[]>('PUT', '/plans/reorder', { date, orderedTaskIds }),

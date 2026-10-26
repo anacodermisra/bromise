@@ -1,10 +1,10 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Task, Category } from '../../types';
+import type { Task, Category, DailyPlanItem } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { GripVertical, Check, Repeat, ArrowRightLeft, Pencil, Trash2, CalendarClock } from 'lucide-react';
+import { GripVertical, Check, Repeat, ArrowRightLeft, Pencil, Trash2, CalendarClock, Clock } from 'lucide-react';
 
 interface TodayTaskItemProps {
   task: Task;
@@ -14,6 +14,7 @@ interface TodayTaskItemProps {
   onRemoveFromToday: (taskId: string) => void;
   onEditTask: (task: Task) => void;
   onDeleteTask: (taskId: string) => void;
+  timeSlots?: DailyPlanItem[];
 }
 
 export const TodayTaskItem: React.FC<TodayTaskItemProps> = React.memo(({
@@ -24,6 +25,7 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = React.memo(({
   onRemoveFromToday,
   onEditTask,
   onDeleteTask,
+  timeSlots,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -113,7 +115,18 @@ export const TodayTaskItem: React.FC<TodayTaskItemProps> = React.memo(({
             </span>
           )}
 
-          <span
+          
+          {timeSlots && timeSlots.length > 0 && (
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-theme-accent/15 text-theme-accent border border-theme-accent/30">
+              <Clock className="w-3 h-3" />
+              <span>
+                {timeSlots
+                  .map(s => `${s.startTime || s.timeSlot}${s.endTime ? `-${s.endTime}` : ''}`)
+                  .join(', ')}
+              </span>
+            </span>
+          )}
+<span
             className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border uppercase tracking-wider ${
               priorityColors[task.priority]
             }`}

@@ -86,6 +86,11 @@ function mapPlan(row) {
     date: row.date,
     position: row.position,
     sourceType: row.source_type,
+    startTime: row.start_time || undefined,
+    endTime: row.end_time || undefined,
+    durationMinutes: row.duration_minutes ? Number(row.duration_minutes) : undefined,
+    timeSlot: row.start_time || undefined,
+    completed: row.completed !== undefined && row.completed !== null ? !!row.completed : undefined,
   };
 }
 
@@ -375,17 +380,98 @@ app.get('/api/plans', requireAuth, async (req, res) => {
 });
 
 app.post('/api/plans', requireAuth, async (req, res) => {
-  const { taskId, date, position, sourceType = 'normal' } = req.body;
+  const {
+    id: clientPlanId,
+    taskId,
+    date,
+    position,
+    sourceType = 'normal',
+    startTime,
+    endTime,
+    durationMinutes,
+    timeSlot,
+    completed,
+  } = req.body;
   if (!taskId || !date) return res.status(400).json({ error: 'taskId and date required' });
-  const existingResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
-  const existing = existingResult.rows[0];
-  if (existing) return res.json(mapPlan(existing));
+
+  const sTime = startTime || timeSlot || null;
+  const dur = durationMinutes || (sTime ? 60 : null);
+  const isComp = completed ? 1 : 0;
+
+  // If client provided a specific ID and it already exists, update it
+  if (clientPlanId) {
+    const existingById = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [clientPlanId, req.userId] });
+    if (existingById.rows[0]) {
+      await db.execute({
+        sql: 'UPDATE daily_plans SET start_time=?, end_time=?, duration_minutes=?, completed=? WHERE id=? AND user_id=?',
+        args: [sTime, endTime || null, dur, isComp, clientPlanId, req.userId]
+      });
+      const updated = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [clientPlanId, req.userId] });
+      return res.json(mapPlan(updated.rows[0]));
+    }
+  }
+
+  // If no time is set and we're adding to today's unassigned list, check if unassigned plan exists
+  if (!sTime) {
+    const existingResult = await db.execute({
+      sql: 'SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=? AND (start_time IS NULL OR start_time = "")',
+      args: [taskId, date, req.userId]
+    });
+    const existing = existingResult.rows[0];
+    if (existing) return res.json(mapPlan(existing));
+  }
+
   const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
   const maxPos = maxPosResult.rows[0].m;
-  const id = `plan-${date}-${taskId}`;
-  await db.execute({ sql: 'INSERT INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)', args: [id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType] });
+  const id = clientPlanId || (sTime ? `slot-${date}-${taskId}-${Date.now()}` : `plan-${date}-${taskId}`);
+
+  await db.execute({
+    sql: 'INSERT INTO daily_plans (id,user_id,task_id,date,position,source_type,start_time,end_time,duration_minutes,completed) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    args: [id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType, sTime, endTime || null, dur, isComp]
+  });
   const rowResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [id, req.userId] });
   res.status(201).json(mapPlan(rowResult.rows[0]));
+});
+
+app.put('/api/plans/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { startTime, endTime, durationMinutes, timeSlot, completed } = req.body;
+  const sTime = startTime !== undefined ? startTime : timeSlot;
+
+  const sets = [];
+  const args = [];
+
+  if (sTime !== undefined) {
+    sets.push('start_time=?');
+    args.push(sTime || null);
+  }
+  if (endTime !== undefined) {
+    sets.push('end_time=?');
+    args.push(endTime || null);
+  }
+  if (durationMinutes !== undefined) {
+    sets.push('duration_minutes=?');
+    args.push(durationMinutes);
+  }
+  if (completed !== undefined) {
+    sets.push('completed=?');
+    args.push(completed ? 1 : 0);
+  }
+
+  if (sets.length > 0) {
+    args.push(id, req.userId);
+    await db.execute({
+      sql: `UPDATE daily_plans SET ${sets.join(', ')} WHERE id=? AND user_id=?`,
+      args,
+    });
+  }
+
+  const rowResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [id, req.userId] });
+  if (rowResult.rows[0]) {
+    res.json(mapPlan(rowResult.rows[0]));
+  } else {
+    res.status(404).json({ error: 'Plan item not found' });
+  }
 });
 
 app.delete('/api/plans/:id', requireAuth, async (req, res) => {
@@ -449,16 +535,24 @@ app.post('/api/completions/toggle', requireAuth, async (req, res) => {
 app.get('/api/stats', requireAuth, async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date required' });
-  const plansResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
-  const plans = plansResult.rows;
-  const plannedCount = plans.length;
+  // Deduplicate unique tasks for the day: multiple slots of the same activity count as 1 task
+  const plansResult = await db.execute({ sql: 'SELECT DISTINCT task_id FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
+  const uniqueTasks = plansResult.rows;
+  const plannedCount = uniqueTasks.length;
   let completedCount = 0;
   const catNames = new Set();
-  for (const plan of plans) {
-    const compResult = await db.execute({ sql: 'SELECT completed FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [plan.task_id, date, req.userId] });
+  for (const item of uniqueTasks) {
+    const compResult = await db.execute({ sql: 'SELECT completed FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [item.task_id, date, req.userId] });
     const comp = compResult.rows[0];
-    if (comp && comp.completed) completedCount++;
-    const taskResult = await db.execute({ sql: 'SELECT category_id FROM tasks WHERE id=? AND user_id=?', args: [plan.task_id, req.userId] });
+    
+    // Check if slots are all completed
+    const slotsResult = await db.execute({ sql: 'SELECT completed FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [item.task_id, date, req.userId] });
+    const slots = slotsResult.rows;
+    const allSlotsCompleted = slots.length > 0 && slots.every(s => s.completed === 1);
+
+    if ((comp && comp.completed) || allSlotsCompleted) completedCount++;
+
+    const taskResult = await db.execute({ sql: 'SELECT category_id FROM tasks WHERE id=? AND user_id=?', args: [item.task_id, req.userId] });
     const task = taskResult.rows[0];
     if (task) {
       const catResult = await db.execute({ sql: 'SELECT name FROM categories WHERE id=? AND user_id=?', args: [task.category_id, req.userId] });
@@ -483,7 +577,7 @@ app.get('/api/stats/streak', requireAuth, async (req, res) => {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+    const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
     const planned = Number(plannedResult.rows[0]?.c || 0);
     const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
     const completed = Number(compResult.rows[0]?.c || 0);
@@ -518,7 +612,7 @@ app.get('/api/stats/heatmap', requireAuth, async (req, res) => {
     const end = new Date(endDate);
     while (curr <= end) {
       const dateStr = curr.toISOString().split('T')[0];
-      const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+      const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
       const planned = Number(plannedResult.rows[0]?.c || 0);
       const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
       const completed = Number(compResult.rows[0]?.c || 0);
@@ -536,7 +630,7 @@ app.get('/api/stats/heatmap', requireAuth, async (req, res) => {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const plannedResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
+    const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
     const planned = Number(plannedResult.rows[0]?.c || 0);
     const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
     const completed = Number(compResult.rows[0]?.c || 0);

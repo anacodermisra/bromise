@@ -97,6 +97,25 @@ async function initDB() {
       console.log(`Migration check for ${table}:`, err.message);
     }
   }
+
+  // Safe migrations for daily_plans custom timetable slots
+  try {
+    const planCols = await db.execute('PRAGMA table_info(daily_plans)');
+    if (!planCols.rows.some(col => col.name === 'start_time')) {
+      await db.execute('ALTER TABLE daily_plans ADD COLUMN start_time TEXT');
+    }
+    if (!planCols.rows.some(col => col.name === 'end_time')) {
+      await db.execute('ALTER TABLE daily_plans ADD COLUMN end_time TEXT');
+    }
+    if (!planCols.rows.some(col => col.name === 'duration_minutes')) {
+      await db.execute('ALTER TABLE daily_plans ADD COLUMN duration_minutes INTEGER DEFAULT 60');
+    }
+    if (!planCols.rows.some(col => col.name === 'completed')) {
+      await db.execute('ALTER TABLE daily_plans ADD COLUMN completed INTEGER DEFAULT 0');
+    }
+  } catch (err) {
+    console.log('Daily plans migration check:', err.message);
+  }
 }
 
 // We let it run in background on startup

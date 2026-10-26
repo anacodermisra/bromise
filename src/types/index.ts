@@ -19,7 +19,6 @@ export interface RecurrenceRule {
   endDate?: string | null;
 }
 
-
 export interface Task {
   id: string;
   title: string;
@@ -40,8 +39,11 @@ export interface DailyPlanItem {
   taskId: string;
   position: number;
   sourceType: 'normal' | 'recurring';
-  timeSlot?: string; // Format: "00:00" to "23:00"
-  durationMinutes?: number;
+  timeSlot?: string; // Format: "00:00" to "23:00" or custom "09:30"
+  startTime?: string; // Format: "HH:mm" e.g. "09:30"
+  endTime?: string; // Format: "HH:mm" e.g. "10:45"
+  durationMinutes?: number; // Duration in minutes (e.g. 75)
+  completed?: boolean;
 }
 
 export interface TaskCompletion {
