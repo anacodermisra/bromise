@@ -240,12 +240,12 @@ const TimelineSlotItem: React.FC<{
         height: `${item.height}px`,
         left: `calc(${leftPercent}% + 3px)`,
         width: `calc(${widthPercent}% - 6px)`,
-        backgroundColor: `${accentColor}18`,
+        backgroundColor: isCompleted ? 'rgba(15, 23, 42, 0.90)' : 'rgba(15, 23, 42, 0.95)',
         borderLeftColor: accentColor,
-        borderColor: `${accentColor}40`,
+        borderColor: isCompleted ? 'rgba(51, 65, 85, 0.6)' : `${accentColor}80`,
       }}
       className={`absolute rounded-xl border border-l-4 p-2 transition-all duration-200 cursor-pointer overflow-hidden z-20 group hover:z-30 hover:shadow-xl hover:border-l-[5px] select-none ${
-        isCompleted ? 'opacity-60 bg-dark-950/60' : 'shadow-sm hover:brightness-110'
+        isCompleted ? 'bg-dark-950/85 border-dark-700/60 shadow-none' : 'shadow-md hover:brightness-110'
       } ${isDragging ? 'opacity-30 ring-2 ring-theme-accent z-50' : ''}`}
       title={`${task.title} (${startTimeDisplay} – ${endTimeDisplay || ''})`}
     >
@@ -275,7 +275,7 @@ const TimelineSlotItem: React.FC<{
             </button>
             <span
               className={`font-semibold truncate text-[11px] ${
-                isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+                isCompleted ? 'line-through text-slate-300' : 'text-slate-100'
               }`}
             >
               {task.title}
@@ -285,14 +285,14 @@ const TimelineSlotItem: React.FC<{
           <div className="flex items-center space-x-1 flex-shrink-0 text-[10px] font-mono text-dark-400">
             <span>{startTimeDisplay}</span>
             <span className="text-dark-500">({durationDisplay}m)</span>
-            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={e => {
                   e.stopPropagation();
                   onAdjustDuration(task, planItem, 15);
                 }}
-                className="px-1 py-0.2 rounded bg-dark-950 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                className="px-1 py-0.2 rounded bg-dark-850 hover:bg-dark-750 text-slate-200 hover:text-white text-[9px] font-mono border border-dark-700"
                 title="Add 15m"
               >
                 +15m
@@ -329,22 +329,22 @@ const TimelineSlotItem: React.FC<{
               </button>
               <span
                 className={`font-semibold truncate text-xs ${
-                  isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+                  isCompleted ? 'line-through text-slate-300' : 'text-slate-100'
                 }`}
               >
                 {task.title}
               </span>
             </div>
 
-            {/* Hover Quick Actions */}
-            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+            {/* Quick Actions */}
+            <div className="flex items-center space-x-1 flex-shrink-0">
               <button
                 type="button"
                 onClick={e => {
                   e.stopPropagation();
                   onAdjustDuration(task, planItem, -15);
                 }}
-                className="px-1 py-0.2 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                className="px-1 py-0.2 rounded bg-dark-850 hover:bg-dark-750 text-slate-200 hover:text-white text-[9px] font-mono border border-dark-700"
                 title="Reduce 15 mins"
               >
                 -15m
@@ -355,7 +355,7 @@ const TimelineSlotItem: React.FC<{
                   e.stopPropagation();
                   onAdjustDuration(task, planItem, 15);
                 }}
-                className="px-1 py-0.2 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                className="px-1 py-0.2 rounded bg-dark-850 hover:bg-dark-750 text-slate-200 hover:text-white text-[9px] font-mono border border-dark-700"
                 title="Add 15 mins"
               >
                 +15m
@@ -430,7 +430,7 @@ const TimelineSlotItem: React.FC<{
                 </button>
                 <span
                   className={`font-bold truncate text-xs sm:text-sm ${
-                    isCompleted ? 'line-through text-dark-500' : 'text-theme-title'
+                    isCompleted ? 'line-through text-slate-300' : 'text-slate-100'
                   }`}
                 >
                   {task.title}
@@ -438,14 +438,14 @@ const TimelineSlotItem: React.FC<{
               </div>
 
               {/* Action icons */}
-              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <div className="flex items-center space-x-1 flex-shrink-0">
                 <button
                   type="button"
                   onClick={e => {
                     e.stopPropagation();
                     onAdjustDuration(task, planItem, -15);
                   }}
-                  className="px-1.5 py-0.5 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                  className="px-1.5 py-0.5 rounded bg-dark-850 hover:bg-dark-750 text-slate-200 hover:text-white text-[9px] font-mono border border-dark-700"
                   title="Reduce 15 mins"
                 >
                   -15m
@@ -456,7 +456,7 @@ const TimelineSlotItem: React.FC<{
                     e.stopPropagation();
                     onAdjustDuration(task, planItem, 15);
                   }}
-                  className="px-1.5 py-0.5 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title text-[9px] font-mono border border-dark-800"
+                  className="px-1.5 py-0.5 rounded bg-dark-850 hover:bg-dark-750 text-slate-200 hover:text-white text-[9px] font-mono border border-dark-700"
                   title="Add 15 mins"
                 >
                   +15m
@@ -467,7 +467,7 @@ const TimelineSlotItem: React.FC<{
                     e.stopPropagation();
                     onDuplicateSlot(task);
                   }}
-                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-purple-400"
+                  className="p-1 rounded bg-dark-850 hover:bg-dark-750 text-dark-300 hover:text-purple-400 border border-dark-750"
                   title="Add another slot today"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -478,7 +478,7 @@ const TimelineSlotItem: React.FC<{
                     e.stopPropagation();
                     onOpenTaskModal(task);
                   }}
-                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-theme-title"
+                  className="p-1 rounded bg-dark-850 hover:bg-dark-750 text-dark-300 hover:text-white border border-dark-750"
                   title="Edit task details"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -489,7 +489,7 @@ const TimelineSlotItem: React.FC<{
                     e.stopPropagation();
                     onRemoveFromTimeSlot(planItem.id);
                   }}
-                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-amber-400"
+                  className="p-1 rounded bg-dark-850 hover:bg-dark-750 text-dark-300 hover:text-amber-400 border border-dark-750"
                   title="Remove slot"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -500,7 +500,7 @@ const TimelineSlotItem: React.FC<{
                     e.stopPropagation();
                     onDeleteTask(task.id);
                   }}
-                  className="p-1 rounded bg-dark-950/80 text-dark-400 hover:text-rose-400"
+                  className="p-1 rounded bg-dark-850 hover:bg-dark-750 text-dark-300 hover:text-rose-400 border border-dark-750"
                   title="Delete task"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -633,14 +633,17 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
 
   // Auto-scroll to current hour on initial load if today
   useEffect(() => {
-    if (scrollContainerRef.current && isActuallyToday && currentTime) {
-      const currentH = parseInt(currentTime.split(':')[0], 10);
-      if (currentH >= startHour && currentH < endHour) {
-        const targetScroll = Math.max(0, (currentH - startHour - 1) * hourHeight);
-        scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    const timer = setTimeout(() => {
+      if (scrollContainerRef.current && isActuallyToday && currentTime) {
+        const currentH = parseInt(currentTime.split(':')[0], 10);
+        if (currentH >= startHour && currentH < endHour) {
+          const targetScroll = Math.max(0, (currentH - startHour - 0.5) * hourHeight);
+          scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+        }
       }
-    }
-  }, [activeQuadrant, isActuallyToday]);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [activeQuadrant, isActuallyToday, currentTime]);
 
   // Track slot counts per task
   const taskSlotCounts = useMemo(() => {
@@ -987,7 +990,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
       {/* GOOGLE CALENDAR PROPORTIONAL TIMELINE VIEW */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 bg-dark-900/90 border border-dark-800 rounded-3xl overflow-hidden shadow-xl max-h-[calc(100vh-270px)] overflow-y-auto relative scrollbar-none select-none"
+        className="flex-1 bg-dark-900/90 border border-dark-800 rounded-3xl overflow-hidden shadow-xl min-h-[480px] h-[calc(100vh-270px)] overflow-y-auto relative select-none"
       >
         <div className="flex items-stretch min-w-[340px]" style={{ height: `${totalCanvasHeight}px` }}>
           {/* Left Hour Axis Column */}

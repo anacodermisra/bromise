@@ -23,6 +23,7 @@ import {
   type ThemeId,
 } from './utils/theme';
 import { SnowEffect } from './components/common/SnowEffect';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { TodayView } from './components/today/TodayView';
@@ -262,7 +263,7 @@ const MainAppContent: React.FC = () => {
   // ─── RENDER ────────────────────────────────────────────────
   return (
     <div
-      className={`min-h-screen text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200 relative ${
+      className={`h-screen overflow-hidden text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200 relative ${
         currentTheme === 'winter-arc' && showWinterWallpaper ? 'bg-transparent' : 'bg-dark-950'
       }`}
     >
@@ -274,9 +275,9 @@ const MainAppContent: React.FC = () => {
             backgroundImage: 'url(/winter-arc-bg.jpg)',
           }}
         >
-          {/* Multi-layered dark vignette & gradient overlay ensuring 100% text clarity and component contrast */}
-          <div className="absolute inset-0 bg-dark-950/80" />
-          <div className="absolute inset-0 bg-gradient-to-t from-dark-950 via-dark-950/65 to-dark-950/80" />
+          {/* Subtle balanced dark vignette overlay ensuring crisp artwork visibility and text contrast */}
+          <div className="absolute inset-0 bg-dark-950/45 backdrop-blur-[0.5px]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-dark-950/50 via-transparent to-dark-950/65" />
         </div>
       )}
 
@@ -301,7 +302,7 @@ const MainAppContent: React.FC = () => {
         }}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative z-10">
         <Header
           stats={stats}
           currentView={currentView}
@@ -315,69 +316,71 @@ const MainAppContent: React.FC = () => {
           }}
         />
 
-        <main className="flex-1 flex flex-col overflow-y-auto">
-          {currentView === 'today' && (
-            <TodayView
-              todayDate={selectedDate}
-              onChangeDate={setSelectedDate}
-              stats={stats}
-              todayPlan={todayPlan}
-              tasks={tasks}
-              categories={categories}
-              completions={completionsMap}
-              onToggleComplete={handleToggleComplete}
-              onRemoveFromToday={handleRemoveFromToday}
-              onAddToToday={handleAddToToday}
-              onReorderToday={handleReorderToday}
-              onAssignTimeSlot={handleAssignTimeSlot}
-              onRemoveTimeSlot={handleRemoveTimeSlot}
-              onTogglePlanSlotComplete={handleTogglePlanSlotComplete}
-              onOpenTaskModal={task => {
-                setEditingTask(task || null);
-                setIsTaskModalOpen(true);
-              }}
-              onDeleteTask={handleDeleteTask}
-            />
-          )}
+        <main className="flex-1 flex flex-col overflow-y-auto min-h-0">
+          <ErrorBoundary>
+            {currentView === 'today' && (
+              <TodayView
+                todayDate={selectedDate}
+                onChangeDate={setSelectedDate}
+                stats={stats}
+                todayPlan={todayPlan}
+                tasks={tasks}
+                categories={categories}
+                completions={completionsMap}
+                onToggleComplete={handleToggleComplete}
+                onRemoveFromToday={handleRemoveFromToday}
+                onAddToToday={handleAddToToday}
+                onReorderToday={handleReorderToday}
+                onAssignTimeSlot={handleAssignTimeSlot}
+                onRemoveTimeSlot={handleRemoveTimeSlot}
+                onTogglePlanSlotComplete={handleTogglePlanSlotComplete}
+                onOpenTaskModal={task => {
+                  setEditingTask(task || null);
+                  setIsTaskModalOpen(true);
+                }}
+                onDeleteTask={handleDeleteTask}
+              />
+            )}
 
-          {currentView === 'tasks' && (
-            <TasksView
-              tasks={tasks}
-              categories={categories}
-              activeCategoryFilter={activeCategoryFilter}
-              onSelectCategoryFilter={setActiveCategoryFilter}
-              onOpenTaskModal={task => {
-                setEditingTask(task || null);
-                setIsTaskModalOpen(true);
-              }}
-              onDeleteTask={handleDeleteTask}
-              onOpenCategoryModal={category => {
-                setEditingCategory(category || null);
-                setIsCategoryModalOpen(true);
-              }}
-              onOpenDeleteCategoryModal={category => {
-                setDeletingCategory(category);
-                setIsDeleteCategoryModalOpen(true);
-              }}
-              onAddToToday={handleAddToToday}
-            />
-          )}
+            {currentView === 'tasks' && (
+              <TasksView
+                tasks={tasks}
+                categories={categories}
+                activeCategoryFilter={activeCategoryFilter}
+                onSelectCategoryFilter={setActiveCategoryFilter}
+                onOpenTaskModal={task => {
+                  setEditingTask(task || null);
+                  setIsTaskModalOpen(true);
+                }}
+                onDeleteTask={handleDeleteTask}
+                onOpenCategoryModal={category => {
+                  setEditingCategory(category || null);
+                  setIsCategoryModalOpen(true);
+                }}
+                onOpenDeleteCategoryModal={category => {
+                  setDeletingCategory(category);
+                  setIsDeleteCategoryModalOpen(true);
+                }}
+                onAddToToday={handleAddToToday}
+              />
+            )}
 
-          {currentView === 'progress' && (
-            <ProgressView categories={categories} tasks={tasks} />
-          )}
+            {currentView === 'progress' && (
+              <ProgressView categories={categories} tasks={tasks} />
+            )}
 
-          {currentView === 'history' && (
-            <HistoryView categories={categories} tasks={tasks} />
-          )}
+            {currentView === 'history' && (
+              <HistoryView categories={categories} tasks={tasks} />
+            )}
 
-          {currentView === 'settings' && (
-            <SettingsView
-              onDataReset={() => { resetData(); reloadLocalData(); }}
-              onDataImported={reloadLocalData}
-              serverOnline={serverOnline}
-            />
-          )}
+            {currentView === 'settings' && (
+              <SettingsView
+                onDataReset={() => { resetData(); reloadLocalData(); }}
+                onDataImported={reloadLocalData}
+                serverOnline={serverOnline}
+              />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

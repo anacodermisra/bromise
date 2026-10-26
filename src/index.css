@@ -19,16 +19,16 @@
   }
 
   [data-theme="winter-arc"] {
-    --app-bg: 5 8 12;
-    --card-bg: 10 16 23;
-    --hover-bg: 16 25 36;
-    --border-color: 24 37 53;
-    --border-strong: 38 58 82;
-    --text-title: 224 242 254; /* Frosted Sky */
-    --text-body: 240 249 255;
-    --text-sub: 125 154 184;
-    --accent-primary: 56 189 248; /* Ice Sky Blue */
-    --accent-secondary: 148 163 184; /* Frozen Slate */
+    --app-bg: 7 12 20;
+    --card-bg: 13 22 35;
+    --hover-bg: 22 36 56;
+    --border-color: 28 46 72;
+    --border-strong: 44 70 108;
+    --text-title: 240 249 255; /* Crisp Frost Sky White */
+    --text-body: 224 242 254; /* Light frosted text */
+    --text-sub: 148 180 214; /* Clear readable cold blue-gray */
+    --accent-primary: 56 189 248; /* Vibrant Ice Sky Blue */
+    --accent-secondary: 96 165 250; /* Arctic Blue */
     color-scheme: dark;
   }
 

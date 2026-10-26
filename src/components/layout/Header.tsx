@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-20 bg-dark-950/80 backdrop-blur-md border-b border-dark-800/80 px-4 md:px-8 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <header className="relative z-20 flex-shrink-0 bg-dark-950/80 backdrop-blur-md border-b border-dark-800/80 px-4 md:px-8 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div className="flex items-center space-x-3">
         <div className="md:hidden w-9 h-9 rounded-xl bg-dark-900 border border-theme-accent/30 flex items-center justify-center shadow-glow-accent overflow-hidden flex-shrink-0 p-1">
           <img
@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center space-x-3">
-        {currentView === 'today' && stats.plannedCount > 0 && (
+        {currentView !== 'today' && stats.plannedCount > 0 && (
           <div className="hidden sm:flex items-center space-x-3 bg-dark-900 border border-dark-800 rounded-xl px-4 py-2">
             <div className="text-right">
               <div className="text-xs text-dark-500 font-medium">Daily Target</div>

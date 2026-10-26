@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -129,11 +129,21 @@ export const TodayView: React.FC<TodayViewProps> = ({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const todayTasks = todayPlan
-    .map(planItem => tasks.find(t => t.id === planItem.taskId))
-    .filter((t): t is Task => t !== undefined);
+  // Deduplicate tasks in today's plan by unique taskId (so multiple slots show as 1 task with multiple slot badges)
+  const todayTasks = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Task[] = [];
+    todayPlan.forEach(planItem => {
+      if (!seen.has(planItem.taskId)) {
+        seen.add(planItem.taskId);
+        const task = tasks.find(t => t.id === planItem.taskId);
+        if (task) list.push(task);
+      }
+    });
+    return list;
+  }, [todayPlan, tasks]);
 
-  const todayTaskIds = todayTasks.map(t => t.id);
+  const todayTaskIds = useMemo(() => todayTasks.map(t => t.id), [todayTasks]);
 
   // Backlog Bucket contains ALL incomplete tasks (and recurring tasks even if completed today)
   const backlogTasks = tasks.filter(task => {
