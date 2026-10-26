@@ -194,9 +194,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onDataReset, onDataI
             </div>
           </div>
         </div>
-        <span className="text-[11px] font-semibold text-dark-400 bg-dark-800 px-2.5 py-1 rounded-lg border border-dark-750">
-          Latest
-        </span>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('bromise-open-update-modal'))}
+            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-theme-accent/15 hover:bg-theme-accent/25 text-theme-accent border border-theme-accent/30 text-xs font-bold transition-all"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>What's New</span>
+          </button>
+          <span className="text-[11px] font-semibold text-dark-400 bg-dark-800 px-2.5 py-1 rounded-lg border border-dark-750">
+            Latest
+          </span>
+        </div>
       </div>
 
       {/* Theme Selection */}

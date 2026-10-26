@@ -34,6 +34,7 @@ import { SettingsView } from './components/settings/SettingsView';
 import { TaskModal } from './components/tasks/TaskModal';
 import { CategoryModal } from './components/tasks/CategoryModal';
 import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
+import { UpdateAnnouncementModal } from './components/common/UpdateAnnouncementModal';
 
 // Sanitize Google Client ID to prevent "401 Malformed" errors from trailing spaces or quotes in Env Vars
 let rawClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
@@ -82,6 +83,14 @@ const MainAppContent: React.FC = () => {
 
   const [isDeleteCategoryModalOpen, setIsDeleteCategoryModalOpen] = useState(false);
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
+
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(true);
+
+  useEffect(() => {
+    const handleOpenUpdate = () => setIsUpdateModalOpen(true);
+    window.addEventListener('bromise-open-update-modal', handleOpenUpdate);
+    return () => window.removeEventListener('bromise-open-update-modal', handleOpenUpdate);
+  }, []);
 
   const reloadLocalData = () => {
     const loadedCats = syncGetCategories();
@@ -413,6 +422,11 @@ const MainAppContent: React.FC = () => {
         tasks={tasks}
         onClose={() => setIsDeleteCategoryModalOpen(false)}
         onConfirmDelete={handleConfirmDeleteCategory}
+      />
+
+      <UpdateAnnouncementModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
       />
     </div>
   );

@@ -58,9 +58,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-black tracking-wider text-theme-title font-sans">BROMISE</h1>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-md bg-theme-accent/20 text-theme-accent border border-theme-accent/30 font-mono">
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('bromise-open-update-modal'))}
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-theme-accent/20 hover:bg-theme-accent/35 text-theme-accent border border-theme-accent/30 font-mono transition-colors cursor-pointer"
+                  title="Click to view What's New in v1.2"
+                >
                   v{APP_VERSION}
-                </span>
+                </button>
               </div>
               <p className="text-[10px] text-theme-accent opacity-90 font-semibold italic">Do it for your younger self.</p>
             </div>
