@@ -515,13 +515,13 @@ export const BroAIAssistant: React.FC<BroAIAssistantProps> = ({
                           Gemini Model Variant
                         </label>
                         <select
-                          value={aiConfig.geminiModel || 'gemini-1.5-flash'}
+                          value={aiConfig.geminiModel || 'gemini-3.5-flash'}
                           onChange={e => handleUpdateConfig({ geminiModel: e.target.value })}
                           className="w-full px-3 py-2 rounded-xl bg-dark-950 border border-dark-800 text-xs text-white"
                         >
-                          <option value="gemini-1.5-flash">gemini-1.5-flash (Fast, Low Latency, Free Tier)</option>
-                          <option value="gemini-2.0-flash">gemini-2.0-flash (Next-Gen High Speed)</option>
-                          <option value="gemini-1.5-pro">gemini-1.5-pro (High Reasoning Depth)</option>
+                          <option value="gemini-3.5-flash">gemini-3.5-flash (High Speed, Free Tier Recommended)</option>
+                          <option value="gemini-3.6-flash">gemini-3.6-flash (Advanced Reasoning Flash)</option>
+                          <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Fast & Lightweight)</option>
                         </select>
                       </div>
 

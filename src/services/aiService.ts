@@ -25,8 +25,8 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   enabled: true,
   provider: 'gemini',
   endpointUrl: 'https://generativelanguage.googleapis.com/v1beta',
-  model: 'gemini-1.5-flash',
-  geminiModel: 'gemini-1.5-flash',
+  model: 'gemini-3.5-flash',
+  geminiModel: 'gemini-3.5-flash',
   apiKey: '',
   autoExecuteActions: true,
 };
@@ -36,6 +36,14 @@ export function getStoredAIConfig(): AIConfig {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      // Migrate legacy deprecated models (1.5-flash, 1.5-pro, 2.0-flash)
+      if (
+        !parsed.geminiModel ||
+        parsed.geminiModel.startsWith('gemini-1.5') ||
+        parsed.geminiModel === 'gemini-2.0-flash'
+      ) {
+        parsed.geminiModel = 'gemini-3.5-flash';
+      }
       return { ...DEFAULT_AI_CONFIG, ...parsed };
     }
   } catch {}
@@ -63,9 +71,9 @@ export function getActiveAIModelInfo(config = getStoredAIConfig()): ActiveModelI
     if (config.apiKey && config.apiKey.trim().length > 0) {
       return {
         providerName: 'Google Gemini',
-        modelName: config.geminiModel || 'gemini-1.5-flash',
+        modelName: config.geminiModel || 'gemini-3.5-flash',
         isCloud: true,
-        statusText: `Cloud LLM Active (${config.geminiModel || 'gemini-1.5-flash'})`,
+        statusText: `Cloud LLM Active (${config.geminiModel || 'gemini-3.5-flash'})`,
       };
     }
     return {
@@ -180,7 +188,7 @@ export function findMatchingTask(targetQuery: string, tasks = getTasks()): Task 
  */
 export async function testGeminiConnection(
   apiKey: string,
-  model = 'gemini-1.5-flash'
+  model = 'gemini-3.5-flash'
 ): Promise<{ ok: boolean; message: string }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
@@ -221,7 +229,7 @@ export async function testLocalAIConnection(
 ): Promise<{ ok: boolean; message: string; models?: string[] }> {
   try {
     if (config.provider === 'gemini') {
-      const res = await testGeminiConnection(config.apiKey || '', config.geminiModel || 'gemini-1.5-flash');
+      const res = await testGeminiConnection(config.apiKey || '', config.geminiModel || 'gemini-3.5-flash');
       return { ok: res.ok, message: res.message };
     }
 
@@ -877,7 +885,7 @@ async function callGeminiLLM(
   selectedDate: string,
   config: AIConfig
 ): Promise<BroActionResult | null> {
-  const model = config.geminiModel || 'gemini-1.5-flash';
+  const model = config.geminiModel || 'gemini-3.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey?.trim()}`;
 
   const todayStr = formatDateKey(new Date());
