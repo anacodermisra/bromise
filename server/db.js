@@ -116,6 +116,22 @@ async function initDB() {
   } catch (err) {
     console.log('Daily plans migration check:', err.message);
   }
+
+  // Create indexes for performance optimization
+  try {
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id, archived)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, archived)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category_id, user_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_daily_plans_user_date ON daily_plans(user_id, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_daily_plans_task ON daily_plans(task_id, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_completions_user_date ON completions(user_id, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_completions_task_date ON completions(task_id, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_recurrence_task ON recurrence_rules(task_id, user_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id, user_id)');
+    console.log('✓ Database indexes created successfully');
+  } catch (err) {
+    console.log('Index creation check:', err.message);
+  }
 }
 
 // We let it run in background on startup

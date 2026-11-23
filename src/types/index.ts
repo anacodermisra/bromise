@@ -54,7 +54,114 @@ export interface TaskCompletion {
   completedAt?: string | null;
 }
 
-export type ViewMode = 'today' | 'tasks' | 'progress' | 'history' | 'settings';
+export type ViewMode = 'today' | 'tasks' | 'gym' | 'study' | 'progress' | 'history' | 'settings';
+
+export type MuscleGroup =
+  | 'chest'
+  | 'upper_chest'
+  | 'shoulders'
+  | 'front_delts'
+  | 'side_delts'
+  | 'rear_delts'
+  | 'biceps'
+  | 'triceps'
+  | 'forearms'
+  | 'lats'
+  | 'traps'
+  | 'lower_back'
+  | 'abs'
+  | 'obliques'
+  | 'quads'
+  | 'hamstrings'
+  | 'glutes'
+  | 'calves';
+
+export interface GymSet {
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  completed: boolean;
+}
+
+export interface GymExercise {
+  id: string;
+  name: string;
+  targetMuscles: MuscleGroup[];
+  defaultSets: number;
+  defaultReps: string;
+  defaultWeightKg: number;
+  notes?: string;
+  completed?: boolean;
+  loggedSets?: GymSet[];
+}
+
+export interface DaySplit {
+  id: string;
+  dayOfWeek: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+  dayName: string;
+  title: string;
+  focusMuscles: MuscleGroup[];
+  exercises: GymExercise[];
+  restDay?: boolean;
+}
+
+export interface GymSchedule {
+  [dayKey: string]: DaySplit; // 'mon', 'tue', etc.
+}
+
+export interface StudyChapter {
+  id: string;
+  title: string;
+  notes?: string;
+  estimatedMinutes?: number;
+  completed: boolean;
+  completedAt?: string;
+}
+
+export interface StudyBook {
+  id: string;
+  title: string;
+  code: string;
+  color: string;
+  category: string;
+  shelf?: 'subjects' | 'courses' | 'reading' | string;
+  chapters: StudyChapter[];
+  notes?: string;
+  targetDate?: string;
+  icon?: string;
+  createdAt: string;
+}
+
+export interface WallpaperConfig {
+  enabled: boolean;
+  type: 'preset' | 'custom';
+  presetId?: string;
+  customUrl?: string;
+  dimOpacity: number; // 0.1 to 0.9
+  blurPx: number; // 0 to 12
+  roomWallpapers?: {
+    gym?: string;
+    study?: string;
+  };
+}
+
+export interface AIMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  actionsExecuted?: string[];
+}
+
+export interface AIConfig {
+  enabled?: boolean;
+  provider: 'gemini' | 'ollama' | 'lmstudio' | 'offline';
+  endpointUrl: string;
+  model: string;
+  apiKey?: string;
+  geminiModel?: string;
+  autoExecuteActions?: boolean;
+}
 
 export interface DayStats {
   date: string;

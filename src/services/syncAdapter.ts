@@ -105,8 +105,14 @@ async function drainQueue() {
     try {
       await executeOp(op);
       dequeue(op.id);
-    } catch {
-      // stop draining — server may have gone down again
+    } catch (err: any) {
+      // If resource was already deleted or not found (404), remove from queue
+      if (err?.message?.includes('404')) {
+        console.warn(`[sync] Resource not found on server for op ${op.type}, discarding:`, err.message);
+        dequeue(op.id);
+        continue;
+      }
+      // Otherwise stop draining — server may have gone down again
       break;
     }
   }
@@ -214,6 +220,7 @@ export function clearSyncState() {
     clearInterval(_healthTimer);
     _healthTimer = null;
   }
+  console.log('[sync] Sync state cleared, health timer stopped');
 }
 
 export async function initSync(onStateChange?: () => void) {
@@ -249,7 +256,13 @@ export async function initSync(onStateChange?: () => void) {
 
 // Helper: try API, fall back to local, enqueue if API fails
 async function trySync(localOp: () => void, type: string, payload: any) {
-  localOp(); // optimistic local update
+  try {
+    localOp(); // optimistic local update
+  } catch (error) {
+    console.error('[sync] Local operation failed:', error);
+    return; // Don't sync if local update fails
+  }
+
   if (_serverOnline) {
     try {
       await executeOp({ id: '', type, payload, createdAt: '' });

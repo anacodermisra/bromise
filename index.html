@@ -7,7 +7,7 @@
     <meta name="description" content="A dark-mode personal task command center focused on daily execution, backlog visibility, and long-term progress. Do it for your younger self." />
 
     <!-- Content Security Policy (CSP) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-src 'self' https://accounts.google.com; connect-src 'self' https://accounts.google.com https://*.turso.io https://*.onrender.com; img-src 'self' data: https://lh3.googleusercontent.com https://*.googleusercontent.com;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-src 'self' https://accounts.google.com; connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 http://localhost:1234 http://127.0.0.1:1234 https://accounts.google.com https://*.turso.io https://*.onrender.com https:; img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https:;" />
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />
@@ -17,10 +17,10 @@
     <meta name="msapplication-TileColor" content="#09090f" />
 
     <!-- Favicon & Icons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="shortcut icon" href="/logo.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/icon-apple.png" />
 
     <!-- iOS PWA settings -->
@@ -46,13 +46,23 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Register Service Worker for PWA
+      // Register Service Worker for PWA in production only, or clean up in local dev
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((reg) => console.log('BROMISE SW registered:', reg.scope))
-            .catch((err) => console.warn('BROMISE SW registration failed:', err));
-        });
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // In local dev, unregister existing service workers to avoid stale cached builds
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const registration of registrations) {
+              registration.unregister();
+              console.log('BROMISE dev: Unregistered stale Service Worker');
+            }
+          });
+        } else {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then((reg) => console.log('BROMISE SW registered:', reg.scope))
+              .catch((err) => console.warn('BROMISE SW registration failed:', err));
+          });
+        }
       }
     </script>
   </body>

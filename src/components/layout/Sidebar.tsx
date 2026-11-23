@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
 import type { ViewMode, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
-import { CalendarCheck, CheckSquare, BarChart3, History, Settings, Plus, Download, Share, X, LogOut } from 'lucide-react';
+import {
+  CalendarCheck,
+  CheckSquare,
+  BarChart3,
+  History,
+  Settings,
+  Plus,
+  Download,
+  Share,
+  X,
+  LogOut,
+  Dumbbell,
+  BookOpen,
+} from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -35,11 +48,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       await promptInstall();
     }
   };
-  const navItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
+
+  const mainViews: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
     { id: 'today', label: 'Today', icon: <CalendarCheck className="w-5 h-5" /> },
     { id: 'tasks', label: 'Backlog & Tasks', icon: <CheckSquare className="w-5 h-5" /> },
+  ];
+
+  const roomViews: { id: ViewMode; label: string; icon: React.ReactNode; badge?: string }[] = [
+    { id: 'gym', label: 'Gym Room', icon: <Dumbbell className="w-5 h-5 text-cyan-400" />, badge: 'Iron' },
+    { id: 'study', label: 'Study Room', icon: <BookOpen className="w-5 h-5 text-amber-400" />, badge: 'Focus' },
+  ];
+
+  const systemViews: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
     { id: 'progress', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
     { id: 'history', label: 'History', icon: <History className="w-5 h-5" /> },
+    { id: 'settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
+  ];
+
+  const mobileNavItems: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
+    { id: 'today', label: 'Today', icon: <CalendarCheck className="w-5 h-5" /> },
+    { id: 'tasks', label: 'Tasks', icon: <CheckSquare className="w-5 h-5" /> },
+    { id: 'gym', label: 'Gym', icon: <Dumbbell className="w-5 h-5" /> },
+    { id: 'study', label: 'Study', icon: <BookOpen className="w-5 h-5" /> },
     { id: 'settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
   ];
 
@@ -47,8 +77,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       <aside className="hidden md:flex flex-col w-64 border-r border-dark-800 bg-dark-900/80 backdrop-blur-xl h-screen sticky top-0 z-30 select-none">
         <div className="p-6 border-b border-dark-800">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-dark-900 border border-theme-accent/30 flex items-center justify-center shadow-glow-accent overflow-hidden flex-shrink-0 p-1">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-dark-950 border border-theme-accent/40 flex items-center justify-center shadow-glow-accent overflow-hidden flex-shrink-0 p-1">
               <img
                 src="/logo.png"
                 alt="BROMISE Logo"
@@ -72,12 +102,72 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
+          {/* Main Execution Views */}
           <div className="space-y-1">
             <div className="px-3 text-[11px] font-semibold text-dark-500 uppercase tracking-wider mb-2">
-              Main Views
+              Daily Engine
             </div>
-            {navItems.map(item => {
+            {mainViews.map(item => {
+              const isActive = currentView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onSelectView(item.id)}
+                  className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+                    isActive
+                      ? 'bg-gradient-to-r from-theme-accent/20 to-theme-accent-secondary/10 text-theme-accent border border-theme-accent/30 shadow-sm'
+                      : 'text-dark-500 hover:text-theme-title hover:bg-dark-850'
+                  }`}
+                >
+                  <span className={isActive ? 'text-theme-accent' : 'text-dark-500'}>{item.icon}</span>
+                  <span>{item.label}</span>
+                  {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-theme-accent shadow-glow-accent" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Tactical Rooms (Gym & Study) */}
+          <div className="space-y-1">
+            <div className="px-3 text-[11px] font-semibold text-cyan-400/90 uppercase tracking-wider mb-2 flex items-center justify-between">
+              <span>Dedicated Rooms</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">NEW</span>
+            </div>
+            {roomViews.map(item => {
+              const isActive = currentView === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onSelectView(item.id)}
+                  className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 ${
+                    isActive
+                      ? item.id === 'gym'
+                        ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-500/30 shadow-sm'
+                        : 'bg-gradient-to-r from-amber-500/20 to-orange-500/10 text-amber-300 border border-amber-500/30 shadow-sm'
+                      : 'text-dark-400 hover:text-theme-title hover:bg-dark-850'
+                  }`}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                  {isActive && (
+                    <div
+                      className={`ml-auto w-1.5 h-1.5 rounded-full ${
+                        item.id === 'gym' ? 'bg-cyan-400 shadow-glow-accent' : 'bg-amber-400 shadow-glow-accent'
+                      }`}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Analytics & System */}
+          <div className="space-y-1">
+            <div className="px-3 text-[11px] font-semibold text-dark-500 uppercase tracking-wider mb-2">
+              Performance & Settings
+            </div>
+            {systemViews.map(item => {
               const isActive = currentView === item.id;
               return (
                 <button
@@ -223,7 +313,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-dark-900/95 backdrop-blur-lg border-t border-dark-800 px-2 py-2 flex items-center justify-around">
-        {navItems.map(item => {
+        {mobileNavItems.map(item => {
           const isActive = currentView === item.id;
           return (
             <button

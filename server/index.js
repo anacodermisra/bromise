@@ -12,8 +12,15 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-app.use(cors());
-app.use(express.json());
+// CORS Configuration - restrict to specific origins in production
+const corsOptions = {
+  origin: IS_PROD
+    ? (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')
+    : true,
+  credentials: true
+};
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
 
 // Set Content Security Policy headers for Google OAuth and resources
 app.use((_req, res, next) => {
@@ -24,8 +31,8 @@ app.use((_req, res, next) => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "frame-src 'self' https://accounts.google.com; " +
-    "connect-src 'self' https://accounts.google.com https://*.turso.io https://*.onrender.com; " +
-    "img-src 'self' data: https://lh3.googleusercontent.com https://*.googleusercontent.com;"
+    "connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 http://localhost:1234 http://127.0.0.1:1234 https://accounts.google.com https://*.turso.io https://*.onrender.com https:; " +
+    "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https:;"
   );
   next();
 });
@@ -295,7 +302,7 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'not found' });
   }
   const today = new Date().toISOString().split('T')[0];
-  await db.execute({ sql: 'DELETE FROM subtasks WHERE task_id=?', args: [id] });
+  await db.execute({ sql: 'DELETE FROM subtasks WHERE task_id=? AND user_id=?', args: [id, req.userId] });
   await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, today] });
   await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [nowISO(), id, req.userId] });
   res.json({ ok: true });
@@ -414,7 +421,7 @@ app.post('/api/plans', requireAuth, async (req, res) => {
   // If no time is set and we're adding to today's unassigned list, check if unassigned plan exists
   if (!sTime) {
     const existingResult = await db.execute({
-      sql: 'SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=? AND (start_time IS NULL OR start_time = "")',
+      sql: "SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=? AND (start_time IS NULL OR start_time = '')",
       args: [taskId, date, req.userId]
     });
     const existing = existingResult.rows[0];
@@ -470,7 +477,8 @@ app.put('/api/plans/:id', requireAuth, async (req, res) => {
   if (rowResult.rows[0]) {
     res.json(mapPlan(rowResult.rows[0]));
   } else {
-    res.status(404).json({ error: 'Plan item not found' });
+    // If not found, return 200 with an empty object so offline queue does not get stuck in a retry loop
+    res.json({ ok: true, notFound: true, id });
   }
 });
 
@@ -483,6 +491,15 @@ app.delete('/api/plans/:id', requireAuth, async (req, res) => {
 app.put('/api/plans/reorder', requireAuth, async (req, res) => {
   const { date, orderedTaskIds } = req.body;
   if (!date || !Array.isArray(orderedTaskIds)) return res.status(400).json({ error: 'date and orderedTaskIds required' });
+
+  // Validate all taskIds are valid strings (prevent SQL injection)
+  const taskIdPattern = /^(task|plan|slot)-[a-zA-Z0-9-]+$/;
+  for (const taskId of orderedTaskIds) {
+    if (typeof taskId !== 'string' || !taskIdPattern.test(taskId)) {
+      return res.status(400).json({ error: 'Invalid task ID format' });
+    }
+  }
+
   const statements = orderedTaskIds.map((taskId, idx) => ({ sql: 'UPDATE daily_plans SET position=? WHERE task_id=? AND date=? AND user_id=?', args: [idx, taskId, date, req.userId] }));
   await db.batch(statements, 'WRITE');
   const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC', args: [date, req.userId] });
@@ -749,7 +766,7 @@ app.post('/api/seed/reset', requireAuth, async (req, res) => {
 if (IS_PROD) {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
-  app.get('{*splat}', (req, res) => {
+  app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(distPath, 'index.html'));
     }

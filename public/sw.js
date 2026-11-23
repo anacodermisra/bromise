@@ -36,6 +36,11 @@ self.addEventListener('activate', (event) => {
 
 // Fetch: Network-first for API, Cache-first for static assets
 self.addEventListener('fetch', (event) => {
+  // Only handle http and https requests (ignore chrome-extension://, etc.)
+  if (!event.request.url.startsWith('http')) {
+    return;
+  }
+
   const url = new URL(event.request.url);
 
   // Always go network-first for API calls (real-time data)
@@ -56,7 +61,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For navigation requests (page loads), serve from cache with network fallback
+  // For navigation requests (page loads), serve network-first with cache fallback
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() =>

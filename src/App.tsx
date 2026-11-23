@@ -35,10 +35,25 @@ import { TaskModal } from './components/tasks/TaskModal';
 import { CategoryModal } from './components/tasks/CategoryModal';
 import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
 import { UpdateAnnouncementModal } from './components/common/UpdateAnnouncementModal';
+import { GymRoomView } from './components/gym/GymRoomView';
+import { StudyRoomView } from './components/study/StudyRoomView';
+import { BroAIAssistant } from './components/ai/BroAIAssistant';
+import {
+  getStoredWallpaperConfig,
+  getActiveWallpaperUrl,
+  DARK_GYM_WALLPAPER,
+  DARK_LIBRARY_WALLPAPER,
+} from './utils/wallpaper';
+import type { WallpaperConfig } from './types';
 
 // Sanitize Google Client ID to prevent "401 Malformed" errors from trailing spaces or quotes in Env Vars
 let rawClientId = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 rawClientId = rawClientId.trim().replace(/['"]/g, '');
+
+if (!rawClientId) {
+  console.error('VITE_GOOGLE_CLIENT_ID is not set. Google authentication will not work.');
+}
+
 const GOOGLE_CLIENT_ID = rawClientId || '87073790500-4ilmlvqndgk06pj6lgbds8lar1qiq4ef.apps.googleusercontent.com';
 
 const MainAppContent: React.FC = () => {
@@ -47,6 +62,7 @@ const MainAppContent: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(getStoredTheme());
   const [showWinterSnow, setShowWinterSnow] = useState<boolean>(isWinterArcSnowEnabled());
   const [showWinterWallpaper, setShowWinterWallpaper] = useState<boolean>(isWinterArcWallpaperEnabled());
+  const [wallpaperConfig, setWallpaperConfig] = useState<WallpaperConfig>(getStoredWallpaperConfig());
 
   useEffect(() => {
     const handleThemeChange = (e: Event) => {
@@ -59,11 +75,21 @@ const MainAppContent: React.FC = () => {
       setShowWinterSnow(isWinterArcSnowEnabled());
       setShowWinterWallpaper(isWinterArcWallpaperEnabled());
     };
+    const handleWallpaperChange = (e: Event) => {
+      const customEvent = e as CustomEvent<WallpaperConfig>;
+      if (customEvent.detail) {
+        setWallpaperConfig(customEvent.detail);
+      } else {
+        setWallpaperConfig(getStoredWallpaperConfig());
+      }
+    };
     window.addEventListener('bromise-theme-change', handleThemeChange);
     window.addEventListener('bromise-winter-fx-change', handleWinterFxChange);
+    window.addEventListener('bromise-wallpaper-change', handleWallpaperChange);
     return () => {
       window.removeEventListener('bromise-theme-change', handleThemeChange);
       window.removeEventListener('bromise-winter-fx-change', handleWinterFxChange);
+      window.removeEventListener('bromise-wallpaper-change', handleWallpaperChange);
     };
   }, []);
 
@@ -118,7 +144,9 @@ const MainAppContent: React.FC = () => {
       const todayKey = formatDateKey(new Date());
       setSelectedDate(prev => {
         // If current selected date is older than today, auto-roll to today
-        if (prev < todayKey) {
+        const prevDate = new Date(prev);
+        const currentDate = new Date(todayKey);
+        if (prevDate < currentDate) {
           return todayKey;
         }
         return prev;
@@ -132,12 +160,30 @@ const MainAppContent: React.FC = () => {
       }
     };
 
-    const timer = setInterval(handleCheckDate, 30_000);
+    // Check every 10 seconds for date changes
+    const timer = setInterval(handleCheckDate, 10_000);
+
+    // Also schedule a check at next midnight
+    const scheduleNextMidnight = () => {
+      const now = new Date();
+      const nextMidnight = new Date(now);
+      nextMidnight.setHours(24, 0, 0, 0);
+      const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+
+      return setTimeout(() => {
+        handleCheckDate();
+        scheduleNextMidnight(); // Schedule next day's midnight
+      }, msUntilMidnight);
+    };
+
+    const midnightTimer = scheduleNextMidnight();
+
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('focus', handleVisibility);
 
     return () => {
       clearInterval(timer);
+      clearTimeout(midnightTimer);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
     };
@@ -184,23 +230,39 @@ const MainAppContent: React.FC = () => {
 
   // ─── HANDLERS ─────────────────────────────────────────────
   const handleToggleComplete = async (taskId: string) => {
-    const isCompleted = await syncToggleCompletion(taskId, selectedDate);
-    setCompletionsMap(prev => ({ ...prev, [taskId]: isCompleted }));
+    try {
+      const isCompleted = await syncToggleCompletion(taskId, selectedDate);
+      setCompletionsMap(prev => ({ ...prev, [taskId]: isCompleted }));
+    } catch (error) {
+      console.error('Failed to toggle completion:', error);
+    }
   };
 
   const handleRemoveFromToday = async (taskId: string) => {
-    await syncRemoveFromToday(taskId, selectedDate);
-    reloadLocalData();
+    try {
+      await syncRemoveFromToday(taskId, selectedDate);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to remove task from today:', error);
+    }
   };
 
   const handleAddToToday = async (taskId: string) => {
-    await syncAddToToday(taskId, selectedDate);
-    reloadLocalData();
+    try {
+      await syncAddToToday(taskId, selectedDate);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to add task to today:', error);
+    }
   };
 
   const handleReorderToday = async (reorderedTaskIds: string[]) => {
-    await syncReorderToday(selectedDate, reorderedTaskIds);
-    reloadLocalData();
+    try {
+      await syncReorderToday(selectedDate, reorderedTaskIds);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to reorder tasks:', error);
+    }
   };
 
   const handleAssignTimeSlot = async (
@@ -210,51 +272,77 @@ const MainAppContent: React.FC = () => {
     endTime?: string,
     planItemId?: string
   ) => {
-    await syncAssignTimeSlot(selectedDate, taskId, startTime, durationMinutes, endTime, planItemId);
-    reloadLocalData();
+    try {
+      await syncAssignTimeSlot(selectedDate, taskId, startTime, durationMinutes, endTime, planItemId);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to assign time slot:', error);
+    }
   };
 
   const handleRemoveTimeSlot = async (planItemIdOrTaskId: string) => {
-    await syncRemoveTimeSlot(planItemIdOrTaskId);
-    reloadLocalData();
+    try {
+      await syncRemoveTimeSlot(planItemIdOrTaskId);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to remove time slot:', error);
+    }
   };
 
   const handleTogglePlanSlotComplete = async (planItemId: string) => {
-    await syncTogglePlanItemCompletion(planItemId);
-    reloadLocalData();
+    try {
+      await syncTogglePlanItemCompletion(planItemId);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to toggle plan slot completion:', error);
+    }
   };
 
   const handleSaveTask = async (
     taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Partial<Task>,
     id?: string
   ) => {
-    if (id) {
-      await syncUpdateTask(id, taskData);
-    } else {
-      await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
+    try {
+      if (id) {
+        await syncUpdateTask(id, taskData);
+      } else {
+        await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
+      }
+      // Always pull fresh data from server so tasks are up to date
+      if (serverOnline) {
+        await pullFromServer();
+      }
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to save task:', error);
+      alert('Failed to save task. Please try again.');
     }
-    // Always pull fresh data from server so tasks are up to date
-    if (serverOnline) {
-      await pullFromServer();
-    }
-    reloadLocalData();
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    await syncDeleteTask(taskId);
-    reloadLocalData();
+    try {
+      await syncDeleteTask(taskId);
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+    }
   };
 
   const handleSaveCategory = async (
     catData: Omit<Category, 'id' | 'createdAt' | 'position'> | Partial<Category>,
     id?: string
   ) => {
-    if (id) {
-      await syncUpdateCategory(id, catData);
-    } else {
-      await syncAddCategory(catData as Omit<Category, 'id' | 'createdAt' | 'position'>);
+    try {
+      if (id) {
+        await syncUpdateCategory(id, catData);
+      } else {
+        await syncAddCategory(catData as Omit<Category, 'id' | 'createdAt' | 'position'>);
+      }
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to save category:', error);
+      alert('Failed to save category. Please try again.');
     }
-    reloadLocalData();
   };
 
   const handleConfirmDeleteCategory = async (
@@ -262,31 +350,65 @@ const MainAppContent: React.FC = () => {
     action: 'move' | 'delete',
     targetCategoryId?: string
   ) => {
-    await syncDeleteCategory(categoryId, action, targetCategoryId);
-    if (activeCategoryFilter === categoryId) {
-      setActiveCategoryFilter(null);
+    try {
+      await syncDeleteCategory(categoryId, action, targetCategoryId);
+      if (activeCategoryFilter === categoryId) {
+        setActiveCategoryFilter(null);
+      }
+      reloadLocalData();
+    } catch (error) {
+      console.error('Failed to delete category:', error);
+      alert('Failed to delete category. Please try again.');
     }
-    reloadLocalData();
   };
+
+  const isGymRoom = currentView === 'gym';
+  const isStudyRoom = currentView === 'study';
+  const isDedicatedRoomView = isGymRoom || isStudyRoom;
+
+  const activeWallpaperUrl = isGymRoom
+    ? DARK_GYM_WALLPAPER
+    : isStudyRoom
+    ? DARK_LIBRARY_WALLPAPER
+    : getActiveWallpaperUrl(wallpaperConfig, currentView);
+
+  const isAtmosphericBackgroundActive =
+    isDedicatedRoomView ||
+    (wallpaperConfig.enabled && !!activeWallpaperUrl) ||
+    (currentTheme === 'winter-arc' && showWinterWallpaper);
 
   // ─── RENDER ────────────────────────────────────────────────
   return (
     <div
       className={`h-screen overflow-hidden text-dark-100 flex font-sans antialiased selection:bg-theme-accent selection:text-white pb-16 md:pb-0 transition-colors duration-200 relative ${
-        currentTheme === 'winter-arc' && showWinterWallpaper ? 'bg-transparent' : 'bg-dark-950'
+        isAtmosphericBackgroundActive ? 'bg-transparent' : 'bg-dark-950'
       }`}
     >
-      {/* Winter Arc Atmospheric Samurai Background */}
-      {currentTheme === 'winter-arc' && showWinterWallpaper && (
+      {/* Dynamic Custom & Room Wallpaper Background Layer */}
+      {isAtmosphericBackgroundActive && activeWallpaperUrl && (
         <div
-          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700"
+          className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ease-out"
           style={{
-            backgroundImage: 'url(/winter-arc-bg.jpg)',
+            backgroundImage: `url("${activeWallpaperUrl}")`,
+            filter:
+              wallpaperConfig.blurPx > 0 && !isDedicatedRoomView
+                ? `blur(${wallpaperConfig.blurPx}px)`
+                : undefined,
+            transform: wallpaperConfig.blurPx > 0 && !isDedicatedRoomView ? 'scale(1.04)' : undefined,
           }}
         >
-          {/* Subtle balanced dark vignette overlay ensuring crisp artwork visibility and text contrast */}
-          <div className="absolute inset-0 bg-dark-950/45 backdrop-blur-[0.5px]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-dark-950/50 via-transparent to-dark-950/65" />
+          {/* Configurable Dimming & Vignette */}
+          <div
+            className="absolute inset-0 bg-dark-950 transition-opacity duration-300"
+            style={{
+              opacity: isGymRoom
+                ? 0.35
+                : isStudyRoom
+                ? 0.35
+                : (wallpaperConfig.dimOpacity ?? 0.45),
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-dark-950/60 via-transparent to-dark-950/70" />
         </div>
       )}
 
@@ -382,6 +504,60 @@ const MainAppContent: React.FC = () => {
               <HistoryView categories={categories} tasks={tasks} />
             )}
 
+            {currentView === 'gym' && (
+              <GymRoomView
+                onPushToToday={async (exerciseName, notes) => {
+                  let targetCat = categories.find(c =>
+                    c.name.toLowerCase().includes('gym') ||
+                    c.name.toLowerCase().includes('fitness') ||
+                    c.name.toLowerCase().includes('health') ||
+                    c.name.toLowerCase().includes('workout')
+                  );
+                  if (!targetCat && categories.length > 0) {
+                    targetCat = categories[0];
+                  }
+                  const newTask = await syncAddTask({
+                    title: `Workout: ${exerciseName}`,
+                    categoryId: targetCat ? targetCat.id : 'cat-default',
+                    notes: notes || 'Scheduled from Iron Sanctuary Gym Room',
+                    priority: 'medium',
+                    isRecurring: false,
+                  });
+                  if (newTask) {
+                    await syncAddToToday(newTask.id, selectedDate);
+                    reloadLocalData();
+                  }
+                }}
+              />
+            )}
+
+            {currentView === 'study' && (
+              <StudyRoomView
+                onPushToToday={async (subject, chapterTitle) => {
+                  let targetCat = categories.find(c =>
+                    c.name.toLowerCase().includes('study') ||
+                    c.name.toLowerCase().includes('learn') ||
+                    c.name.toLowerCase().includes('read') ||
+                    c.name.toLowerCase().includes('work')
+                  );
+                  if (!targetCat && categories.length > 0) {
+                    targetCat = categories[0];
+                  }
+                  const newTask = await syncAddTask({
+                    title: `Study: ${subject} - ${chapterTitle}`,
+                    categoryId: targetCat ? targetCat.id : 'cat-default',
+                    notes: `Deep work chapter from Library Bookshelf`,
+                    priority: 'high',
+                    isRecurring: false,
+                  });
+                  if (newTask) {
+                    await syncAddToToday(newTask.id, selectedDate);
+                    reloadLocalData();
+                  }
+                }}
+              />
+            )}
+
             {currentView === 'settings' && (
               <SettingsView
                 onDataReset={() => { resetData(); reloadLocalData(); }}
@@ -427,6 +603,13 @@ const MainAppContent: React.FC = () => {
       <UpdateAnnouncementModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
+      />
+
+      {/* Floating Bro Bot Assistant Engine */}
+      <BroAIAssistant
+        categories={categories}
+        selectedDate={selectedDate}
+        onDataChanged={reloadLocalData}
       />
     </div>
   );

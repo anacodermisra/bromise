@@ -33,12 +33,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="relative z-20 flex-shrink-0 bg-dark-950/80 backdrop-blur-md border-b border-dark-800/80 px-4 md:px-8 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div className="flex items-center space-x-3">
-        <div className="md:hidden w-9 h-9 rounded-xl bg-dark-900 border border-theme-accent/30 flex items-center justify-center shadow-glow-accent overflow-hidden flex-shrink-0 p-1">
+      <div className="flex items-center space-x-3.5">
+        {/* Dap Handshake Logo Badge - Always visible on laptop, desktop and mobile */}
+        <div className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-dark-900 border border-theme-accent/30 flex items-center justify-center shadow-glow-accent overflow-hidden flex-shrink-0 p-1 group hover:border-theme-accent transition-all duration-200">
           <img
             src="/logo.png"
             alt="BROMISE Logo"
-            className="w-full h-full object-contain"
+            className="w-full h-full object-contain filter drop-shadow(0 2px 4px rgba(0,0,0,0.5)) transform group-hover:scale-105 transition-transform"
           />
         </div>
         <div>
@@ -46,8 +47,14 @@ export const Header: React.FC<HeaderProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             <span>{formattedDate}</span>
           </div>
-          <h2 className="text-lg md:text-xl font-bold text-theme-title font-sans mt-0.5">
-            {currentView === 'today' ? getGreeting() : currentView.toUpperCase()}
+          <h2 className="text-lg md:text-xl font-bold text-theme-title font-sans mt-0.5 capitalize">
+            {currentView === 'today'
+              ? getGreeting()
+              : currentView === 'gym'
+              ? 'Iron Sanctuary • Gym Room'
+              : currentView === 'study'
+              ? 'Deep Work Vault • Study Room'
+              : currentView}
           </h2>
         </div>
       </div>

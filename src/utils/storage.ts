@@ -1,5 +1,7 @@
-import type { Category, Task, DailyPlanItem, TaskCompletion } from '../types';
-import { formatDateKey } from './seedData';
+import type { Category, Task, DailyPlanItem, TaskCompletion, GymSchedule, StudyBook } from '../types';
+import { formatDateKey, INITIAL_CATEGORIES, INITIAL_TASKS } from './seedData';
+import { DEFAULT_GYM_SCHEDULE } from './gymData';
+import { DEFAULT_STUDY_BOOKS } from './studyData';
 
 export { formatDateKey };
 
@@ -40,11 +42,20 @@ export function initStorage() {
   cleanupLegacyStorageKeys();
   const catKey = getKey('categories');
   const taskKey = getKey('tasks');
+  const gymKey = getKey('gym_schedule');
+  const studyKey = getKey('study_books');
+
   if (localStorage.getItem(catKey) === null) {
-    localStorage.setItem(catKey, JSON.stringify([]));
+    saveCategories(INITIAL_CATEGORIES);
   }
   if (localStorage.getItem(taskKey) === null) {
-    localStorage.setItem(taskKey, JSON.stringify([]));
+    saveTasks(INITIAL_TASKS);
+  }
+  if (localStorage.getItem(gymKey) === null) {
+    saveGymSchedule(DEFAULT_GYM_SCHEDULE);
+  }
+  if (localStorage.getItem(studyKey) === null) {
+    saveStudyBooks(DEFAULT_STUDY_BOOKS);
   }
 }
 
@@ -54,16 +65,25 @@ export function initStorage() {
 export function getCategories(): Category[] {
   try {
     const data = localStorage.getItem(getKey('categories'));
-    if (!data) return [];
+    if (!data) return INITIAL_CATEGORIES;
     const cats: Category[] = JSON.parse(data);
+    if (!cats || cats.length === 0) return INITIAL_CATEGORIES;
     return cats.sort((a, b) => a.position - b.position);
   } catch {
-    return [];
+    return INITIAL_CATEGORIES;
   }
 }
 
 export function saveCategories(categories: Category[]) {
-  localStorage.setItem(getKey('categories'), JSON.stringify(categories));
+  try {
+    localStorage.setItem(getKey('categories'), JSON.stringify(categories));
+  } catch (error) {
+    console.error('Failed to save categories to localStorage:', error);
+    if (error instanceof Error && error.name === 'QuotaExceededError') {
+      alert('Storage quota exceeded. Please export your data and clear old entries.');
+    }
+    throw error;
+  }
 }
 
 export function addCategory(category: Omit<Category, 'id' | 'createdAt' | 'position'>): Category {
@@ -116,7 +136,15 @@ export function getTasks(): Task[] {
 }
 
 export function saveTasks(tasks: Task[]) {
-  localStorage.setItem(getKey('tasks'), JSON.stringify(tasks));
+  try {
+    localStorage.setItem(getKey('tasks'), JSON.stringify(tasks));
+  } catch (error) {
+    console.error('Failed to save tasks to localStorage:', error);
+    if (error instanceof Error && error.name === 'QuotaExceededError') {
+      alert('Storage quota exceeded. Please export your data and clear old entries.');
+    }
+    throw error;
+  }
 }
 
 export function addTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Task {
@@ -143,7 +171,7 @@ export function deleteTask(id: string) {
   const tasks = getTasks().map(t => t.id === id ? { ...t, archivedAt: new Date().toISOString() } : t);
   saveTasks(tasks);
   const today = formatDateKey(new Date());
-  const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date > today));
+  const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date >= today));
   saveDailyPlans(plans);
 }
 
@@ -160,7 +188,15 @@ export function getDailyPlans(): DailyPlanItem[] {
 }
 
 export function saveDailyPlans(plans: DailyPlanItem[]) {
-  localStorage.setItem(getKey('daily_plans'), JSON.stringify(plans));
+  try {
+    localStorage.setItem(getKey('daily_plans'), JSON.stringify(plans));
+  } catch (error) {
+    console.error('Failed to save daily plans to localStorage:', error);
+    if (error instanceof Error && error.name === 'QuotaExceededError') {
+      alert('Storage quota exceeded. Please export your data and clear old entries.');
+    }
+    throw error;
+  }
 }
 
 export function getOrInitDailyPlan(dateStr: string): DailyPlanItem[] {
@@ -406,7 +442,15 @@ export function getCompletions(): TaskCompletion[] {
 }
 
 export function saveCompletions(completions: TaskCompletion[]) {
-  localStorage.setItem(getKey('completions'), JSON.stringify(completions));
+  try {
+    localStorage.setItem(getKey('completions'), JSON.stringify(completions));
+  } catch (error) {
+    console.error('Failed to save completions to localStorage:', error);
+    if (error instanceof Error && error.name === 'QuotaExceededError') {
+      alert('Storage quota exceeded. Please export your data and clear old entries.');
+    }
+    throw error;
+  }
 }
 
 export function toggleTaskCompletion(taskId: string, dateStr: string): boolean {
@@ -682,7 +726,124 @@ export function importDataJSON(jsonStr: string): boolean {
 }
 
 export function resetToSeedData() {
-  const keys = ['categories', 'tasks', 'daily_plans', 'completions', 'account_created'];
+  const keys = ['categories', 'tasks', 'daily_plans', 'completions', 'account_created', 'gym_schedule', 'study_books'];
   keys.forEach(k => localStorage.removeItem(getKey(k)));
-  initStorage();
+  saveCategories(INITIAL_CATEGORIES);
+  saveTasks(INITIAL_TASKS);
+  saveGymSchedule(DEFAULT_GYM_SCHEDULE);
+  saveStudyBooks(DEFAULT_STUDY_BOOKS);
+}
+
+// ─────────────────────────────────────────────────────────────
+// GYM SCHEDULE & LOGS
+// ─────────────────────────────────────────────────────────────
+const LEGACY_MOCK_EXERCISE_PREFIXES = ['ex-mon-', 'ex-tue-', 'ex-wed-', 'ex-thu-', 'ex-fri-', 'ex-sat-', 'ex-sun-'];
+const LEGACY_MOCK_BOOK_IDS = new Set([
+  'book-dsa',
+  'book-sys',
+  'book-atomic',
+  'book-calc',
+  'book-ml',
+  'book-ai',
+  'book-fin',
+]);
+
+function isLegacyMockBook(id: string): boolean {
+  if (LEGACY_MOCK_BOOK_IDS.has(id)) return true;
+  // User books are generated via `book-${Date.now()}`. Hardcoded mock book IDs are alphanumeric slugs like book-ai, book-dsa.
+  const suffix = id.replace(/^book-/, '');
+  if (!/^\d+$/.test(suffix) && !id.startsWith('book-custom-')) {
+    return true;
+  }
+  return false;
+}
+
+export function getGymSchedule(): GymSchedule {
+  try {
+    const raw = localStorage.getItem(getKey('gym_schedule'));
+    if (!raw) return DEFAULT_GYM_SCHEDULE;
+    const parsed = JSON.parse(raw) as GymSchedule;
+    // Strip legacy mock exercises if present
+    let hasLegacy = false;
+    for (const key of Object.keys(parsed) as (keyof GymSchedule)[]) {
+      if (parsed[key]?.exercises?.length) {
+        const filtered = parsed[key].exercises.filter(
+          ex => !LEGACY_MOCK_EXERCISE_PREFIXES.some(prefix => ex.id.startsWith(prefix))
+        );
+        if (filtered.length !== parsed[key].exercises.length) {
+          parsed[key].exercises = filtered;
+          hasLegacy = true;
+        }
+      }
+    }
+    if (hasLegacy) {
+      saveGymSchedule(parsed);
+    }
+    return parsed;
+  } catch {
+    return DEFAULT_GYM_SCHEDULE;
+  }
+}
+
+export function saveGymSchedule(schedule: GymSchedule) {
+  try {
+    localStorage.setItem(getKey('gym_schedule'), JSON.stringify(schedule));
+    window.dispatchEvent(new CustomEvent('bromise-gym-change'));
+  } catch (error) {
+    console.error('Failed to save gym schedule:', error);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// STUDY ROOM & BOOKS
+// ─────────────────────────────────────────────────────────────
+export function getStudyBooks(): StudyBook[] {
+  try {
+    const raw = localStorage.getItem(getKey('study_books'));
+    if (!raw) return DEFAULT_STUDY_BOOKS;
+    const parsed = JSON.parse(raw) as StudyBook[];
+    // Filter out legacy mock books
+    const filtered = parsed.filter(b => !isLegacyMockBook(b.id));
+    if (filtered.length !== parsed.length) {
+      saveStudyBooks(filtered);
+      return filtered;
+    }
+    return parsed;
+  } catch {
+    return DEFAULT_STUDY_BOOKS;
+  }
+}
+
+export function saveStudyBooks(books: StudyBook[]) {
+  try {
+    localStorage.setItem(getKey('study_books'), JSON.stringify(books));
+    window.dispatchEvent(new CustomEvent('bromise-study-change'));
+  } catch (error) {
+    console.error('Failed to save study books:', error);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// CLEAN PREFILLED TASKS
+// ─────────────────────────────────────────────────────────────
+export function cleanPrefilledTasks(): number {
+  const seedIds = new Set(INITIAL_TASKS.map(t => t.id));
+  const seedTitles = new Set(INITIAL_TASKS.map(t => t.title.toLowerCase().trim()));
+  const currentTasks = getTasks();
+  
+  const toRemove = currentTasks.filter(
+    t => seedIds.has(t.id) || seedTitles.has(t.title.toLowerCase().trim())
+  );
+  const removedIds = new Set(toRemove.map(t => t.id));
+  const filtered = currentTasks.filter(t => !removedIds.has(t.id));
+  const removedCount = toRemove.length;
+
+  saveTasks(filtered);
+
+  // Also remove from daily plans
+  const dailyPlans = getDailyPlans();
+  const filteredPlans = dailyPlans.filter(p => !removedIds.has(p.taskId));
+  saveDailyPlans(filteredPlans);
+
+  return removedCount;
 }
