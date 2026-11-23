@@ -27,3 +27,7 @@ dist-ssr
 .env
 data/
 .agents/
+
+# Android build outputs & local artifacts
+*.apk
+emulator_screen.png

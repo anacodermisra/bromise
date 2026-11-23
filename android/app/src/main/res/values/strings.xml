@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BROMISE</string>
+    <string name="title_activity_main">BROMISE</string>
+    <string name="package_name">com.bromise.app</string>
+    <string name="custom_url_scheme">com.bromise.app</string>
+</resources>
