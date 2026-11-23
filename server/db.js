@@ -83,6 +83,12 @@ async function initDB() {
       created_at TEXT NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT PRIMARY KEY,
+      gym_schedule TEXT,
+      study_books TEXT,
+      updated_at TEXT
+    );
   `);
 
   // Safe migrations to add user_id column if upgrading existing local DB

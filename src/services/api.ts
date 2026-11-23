@@ -114,4 +114,8 @@ export const api = {
   exportData: () => fetch(`${BASE}/export`, { headers: getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {} }).then(r => r.json()),
   importData: (data: any) => req<any>('POST', '/import', data),
   resetSeed: () => req<any>('POST', '/seed/reset', {}),
+
+  // User Rooms (Gym & Study Cross-Device Sync)
+  getUserRooms: () => req<{ gymSchedule: any; studyBooks: any }>('GET', '/user/rooms'),
+  saveUserRooms: (data: { gymSchedule?: any; studyBooks?: any }) => req<{ ok: boolean }>('POST', '/user/rooms', data),
 };

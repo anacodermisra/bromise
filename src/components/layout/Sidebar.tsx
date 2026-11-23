@@ -14,6 +14,9 @@ import {
   LogOut,
   Dumbbell,
   BookOpen,
+  Monitor,
+  Smartphone,
+  ExternalLink,
 } from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,12 +43,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { canInstall, isInstalled, isIOS, promptInstall } = usePWAInstall();
   const { user, logout } = useAuth();
   const [showIOSHint, setShowIOSHint] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   const handleInstallClick = async () => {
     if (isIOS) {
       setShowIOSHint(true);
-    } else {
+    } else if (canInstall) {
       await promptInstall();
+    } else {
+      setShowInstallModal(true);
     }
   };
 
@@ -267,7 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
 
           {/* Install App Button */}
-          {!isInstalled && (canInstall || isIOS) && (
+          {!isInstalled && (
             <button
               onClick={handleInstallClick}
               className="w-full flex items-center justify-center space-x-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-theme-accent/20 to-theme-accent-secondary/10 hover:from-theme-accent/30 hover:to-theme-accent-secondary/20 text-theme-accent border border-theme-accent/30 text-xs font-semibold transition-all duration-200 hover:shadow-glow-accent group"
@@ -284,6 +290,77 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       </aside>
+
+      {/* Desktop & Android APK Download / Installation Modal */}
+      {showInstallModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in"
+          onClick={() => setShowInstallModal(false)}
+        >
+          <div
+            className="bg-dark-900 border border-dark-750 rounded-2xl p-6 max-w-md w-full shadow-2xl relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4 border-b border-dark-800 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-theme-accent/20 text-theme-accent flex items-center justify-center">
+                  <Download className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-theme-title">Install BROMISE</h3>
+                  <p className="text-[10px] text-dark-400">Desktop App & Android APK options</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowInstallModal(false)}
+                className="text-dark-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Option 1: PC Desktop App */}
+              <div className="p-3.5 rounded-xl bg-dark-850/80 border border-dark-800 flex flex-col space-y-2">
+                <div className="flex items-center space-x-2 text-xs font-bold text-theme-title">
+                  <Monitor className="w-4 h-4 text-theme-accent" />
+                  <span>PC / Mac Desktop Installation</span>
+                </div>
+                <p className="text-[11px] text-dark-300 leading-relaxed">
+                  In Chrome or Edge, click the <strong>Install</strong> button in your address bar (right next to the bookmark star), or open browser menu <strong className="text-white">Save and share → Install BROMISE</strong>.
+                </p>
+              </div>
+
+              {/* Option 2: Android APK Download */}
+              <div className="p-3.5 rounded-xl bg-dark-850/80 border border-dark-800 flex flex-col space-y-2">
+                <div className="flex items-center space-x-2 text-xs font-bold text-theme-title">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <span>Download Android APK</span>
+                </div>
+                <p className="text-[11px] text-dark-300 leading-relaxed">
+                  Generate and download a standalone signed Android APK directly onto your PC or phone using PWABuilder cloud packaging.
+                </p>
+                <a
+                  href="https://www.pwabuilder.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all"
+                >
+                  <span>Open PWABuilder Package Hub</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowInstallModal(false)}
+              className="mt-5 w-full py-2.5 rounded-xl bg-theme-accent text-white text-xs font-bold hover:bg-theme-accent/90 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* iOS Install Instructions Modal */}
       {showIOSHint && (
@@ -328,10 +405,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           );
         })}
-        {!isInstalled && (canInstall || isIOS) && (
+        {!isInstalled && (
           <button
             onClick={handleInstallClick}
-            className="flex flex-col items-center py-1.5 px-3 rounded-xl transition-all text-theme-accent bg-theme-accent/10 animate-pulse"
+            className="flex flex-col items-center py-1.5 px-3 rounded-xl transition-all text-theme-accent bg-theme-accent/10"
             title="Install BROMISE App"
           >
             <Download className="w-5 h-5" />

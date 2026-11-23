@@ -761,6 +761,53 @@ app.post('/api/seed/reset', requireAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────
+// USER ROOM DATA (GYM & STUDY CROSS-DEVICE SYNC)
+// ─────────────────────────────────────────
+app.get('/api/user/rooms', requireAuth, async (req, res) => {
+  try {
+    const rowRes = await db.execute({
+      sql: 'SELECT gym_schedule, study_books FROM user_settings WHERE user_id=?',
+      args: [req.userId],
+    });
+    const row = rowRes.rows[0];
+    res.json({
+      gymSchedule: row && row.gym_schedule ? JSON.parse(row.gym_schedule) : null,
+      studyBooks: row && row.study_books ? JSON.parse(row.study_books) : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/user/rooms', requireAuth, async (req, res) => {
+  try {
+    const { gymSchedule, studyBooks } = req.body;
+    const existing = await db.execute({
+      sql: 'SELECT user_id FROM user_settings WHERE user_id=?',
+      args: [req.userId],
+    });
+
+    const gymStr = gymSchedule ? JSON.stringify(gymSchedule) : null;
+    const studyStr = studyBooks ? JSON.stringify(studyBooks) : null;
+
+    if (existing.rows[0]) {
+      await db.execute({
+        sql: 'UPDATE user_settings SET gym_schedule=COALESCE(?, gym_schedule), study_books=COALESCE(?, study_books), updated_at=? WHERE user_id=?',
+        args: [gymStr, studyStr, nowISO(), req.userId],
+      });
+    } else {
+      await db.execute({
+        sql: 'INSERT INTO user_settings (user_id, gym_schedule, study_books, updated_at) VALUES (?, ?, ?, ?)',
+        args: [req.userId, gymStr, studyStr, nowISO()],
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────
 // SERVE VITE PRODUCTION BUILD
 // ─────────────────────────────────────────
 if (IS_PROD) {

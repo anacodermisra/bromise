@@ -34,9 +34,10 @@ import {
   getCompletions, saveCompletions, toggleTaskCompletion as lsToggle,
   getDayStats, getHeatmapData, getStreakInfo,
   exportDataJSON, importDataJSON, resetToSeedData,
-  isTaskCompletedOnDate, formatDateKey, getKey,
+  isTaskCompletedOnDate, formatDateKey, getKey, getActiveUserId,
+  getGymSchedule, saveGymSchedule, getStudyBooks, saveStudyBooks,
 } from '../utils/storage';
-import type { Category, Task, DailyPlanItem, TaskCompletion } from '../types';
+import type { Category, Task, DailyPlanItem, TaskCompletion, GymSchedule, StudyBook } from '../types';
 
 // ─────────────────────────────────────────────────────────
 // SERVER CONNECTIVITY STATE
@@ -169,6 +170,7 @@ async function executeOp(op: SyncOp) {
     }
     case 'TOGGLE_COMPLETION': await api.toggleCompletion(p.taskId, p.date); break;
     case 'IMPORT_DATA':     await api.importData(p); break;
+    case 'SYNC_ROOMS':      await api.saveUserRooms(p); break;
     default: console.warn('[sync] Unknown op type:', op.type);
   }
 }
@@ -189,11 +191,12 @@ export async function pullFromServer() {
   }
 
   try {
-    const [cats, tasks, plans, completions] = await Promise.all([
+    const [cats, tasks, plans, completions, userRooms] = await Promise.all([
       api.getCategories(),
       api.getTasks(),
       api.getPlans(),
       api.getCompletions(),
+      api.getUserRooms().catch(() => ({ gymSchedule: null, studyBooks: null })),
     ]);
 
     // Overwrite LocalStorage with fresh server data
@@ -201,6 +204,26 @@ export async function pullFromServer() {
     saveTasks(tasks);
     saveDailyPlans(plans);
     saveCompletions(completions);
+
+    // Sync room data if present on server, or upload initial local rooms
+    if (userRooms?.gymSchedule) {
+      saveGymSchedule(userRooms.gymSchedule);
+    } else {
+      const localGym = getGymSchedule();
+      if (localGym) {
+        api.saveUserRooms({ gymSchedule: localGym }).catch(() => {});
+      }
+    }
+
+    if (userRooms?.studyBooks && Array.isArray(userRooms.studyBooks) && userRooms.studyBooks.length > 0) {
+      saveStudyBooks(userRooms.studyBooks);
+    } else {
+      const localBooks = getStudyBooks();
+      if (localBooks && localBooks.length > 0) {
+        api.saveUserRooms({ studyBooks: localBooks }).catch(() => {});
+      }
+    }
+
     _initialSyncDone = true;
   } catch (e) {
     console.warn('[sync] Could not pull from server, using local data:', e);
@@ -408,6 +431,34 @@ export function importData(jsonStr: string): boolean {
 
 export function resetData() {
   resetToSeedData();
+}
+
+// ─── ROOMS (GYM & STUDY CROSS-DEVICE SYNC) ─────────────────
+export async function syncSaveGymSchedule(schedule: GymSchedule): Promise<void> {
+  saveGymSchedule(schedule);
+  await trySync(() => {}, 'SYNC_ROOMS', { gymSchedule: schedule });
+}
+
+export async function syncSaveStudyBooks(books: StudyBook[]): Promise<void> {
+  saveStudyBooks(books);
+  await trySync(() => {}, 'SYNC_ROOMS', { studyBooks: books });
+}
+
+// Automatic room change listener so any local room updates sync seamlessly
+if (typeof window !== 'undefined') {
+  window.addEventListener('bromise-gym-change', () => {
+    if (getActiveUserId()) {
+      const gym = getGymSchedule();
+      trySync(() => {}, 'SYNC_ROOMS', { gymSchedule: gym });
+    }
+  });
+
+  window.addEventListener('bromise-study-change', () => {
+    if (getActiveUserId()) {
+      const books = getStudyBooks();
+      trySync(() => {}, 'SYNC_ROOMS', { studyBooks: books });
+    }
+  });
 }
 
 export { formatDateKey };
