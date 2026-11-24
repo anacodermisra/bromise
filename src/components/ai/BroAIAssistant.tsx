@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Category, AIMessage, AIConfig } from '../../types';
+import type { AIMessage, AIConfig } from '../../types';
 import {
   executeBroCommand,
   getStoredAIConfig,
@@ -26,13 +26,11 @@ import {
 } from 'lucide-react';
 
 interface BroAIAssistantProps {
-  categories: Category[];
   selectedDate: string;
   onDataChanged: () => void;
 }
 
 export const BroAIAssistant: React.FC<BroAIAssistantProps> = ({
-  categories,
   selectedDate,
   onDataChanged,
 }) => {
@@ -140,7 +138,7 @@ export const BroAIAssistant: React.FC<BroAIAssistantProps> = ({
     setIsProcessing(true);
 
     try {
-      const result = await executeBroCommand(query, categories, selectedDate);
+      const result = await executeBroCommand(query, selectedDate);
 
       if (result.actionTaken === 'completed_task' || result.actionTaken === 'added_task') {
         confetti({

@@ -362,12 +362,15 @@ export async function resolveCategory(
  */
 export async function executeBroCommand(
   input: string,
-  categories: Category[],
   selectedDate: string
 ): Promise<BroActionResult> {
   const query = input.trim();
   const lower = query.toLowerCase();
   const config = getStoredAIConfig();
+
+  // Always read fresh categories from storage — the prop can go stale
+  // if categories are added/edited after the component mounts
+  const categories = getCategories();
 
   // ─────────────────────────────────────────────────────────────
   // 1. Check for quick direct deterministic commands first

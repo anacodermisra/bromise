@@ -607,7 +607,6 @@ const MainAppContent: React.FC = () => {
 
       {/* Floating Bro Bot Assistant Engine */}
       <BroAIAssistant
-        categories={categories}
         selectedDate={selectedDate}
         onDataChanged={reloadLocalData}
       />
