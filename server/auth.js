@@ -44,12 +44,27 @@ async function verifyGoogleTokenAndGetUser(idToken) {
   });
   let user = userRes.rows[0];
 
+  // If not found by google_id, check for existing account with matching email (case-insensitive)
+  if (!user && email) {
+    const emailRes = await db.execute({
+      sql: 'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+      args: [email]
+    });
+    if (emailRes.rows[0]) {
+      user = emailRes.rows[0];
+      await db.execute({
+        sql: 'UPDATE users SET google_id = ?, updated_at = ? WHERE id = ?',
+        args: [googleId, nowISO(), user.id]
+      });
+    }
+  }
+
   if (!user) {
     const userId = `usr-${uid()}`;
     const now = nowISO();
     await db.execute({
       sql: 'INSERT INTO users (id, google_id, email, name, picture, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [userId, googleId, email, name, picture || null, now, now]
+      args: [userId, googleId, email.toLowerCase(), name, picture || null, now, now]
     });
     
     const newUserRes = await db.execute({

@@ -199,6 +199,24 @@ export async function pullFromServer() {
       api.getUserRooms().catch(() => ({ gymSchedule: null, studyBooks: null })),
     ]);
 
+    // Safety check against destructive overwrite:
+    // If server returned 0 categories and 0 tasks, but local storage already has valid user data,
+    // NEVER destroy the local data! Instead push local data up to the server so it is preserved.
+    const localCats = getCategories();
+    const localTasks = getTasks();
+    if (cats.length === 0 && tasks.length === 0 && (localCats.length > 0 || localTasks.length > 0)) {
+      console.warn('[sync] Server returned 0 items while local has data. Preserving local data and syncing to server.');
+      api.importData({
+        categories: localCats,
+        tasks: localTasks,
+        dailyPlans: getDailyPlans(),
+        completions: getCompletions(),
+        gymSchedule: getGymSchedule(),
+        studyBooks: getStudyBooks(),
+      }).catch(err => console.error('[sync] Push local to server failed:', err));
+      return;
+    }
+
     // Overwrite LocalStorage with fresh server data
     saveCategories(cats);
     saveTasks(tasks);
@@ -419,15 +437,59 @@ export { getDayStats, getHeatmapData, getStreakInfo };
 // ─── EXPORT / IMPORT / RESET ──────────────────────────────
 export { exportDataJSON };
 
-export function importData(jsonStr: string): boolean {
-  const result = importDataJSON(jsonStr);
-  if (result) {
+export async function syncImportData(jsonStr: string): Promise<{ success: boolean; error?: string; count?: { categories: number; tasks: number } }> {
+  try {
     const parsed = JSON.parse(jsonStr);
-    // Try to sync with server too
-    trySync(() => {}, 'IMPORT_DATA', parsed);
+    if (!parsed || !Array.isArray(parsed.categories) || !Array.isArray(parsed.tasks)) {
+      return { success: false, error: 'Invalid backup file: categories and tasks arrays are required' };
+    }
+
+    // 1. Save to LocalStorage immediately so local state is fully restored
+    const localSaved = importDataJSON(jsonStr);
+    if (!localSaved) {
+      return { success: false, error: 'Failed to parse and store backup locally' };
+    }
+
+    const payload = {
+      categories: parsed.categories,
+      tasks: parsed.tasks,
+      dailyPlans: Array.isArray(parsed.dailyPlans) ? parsed.dailyPlans : [],
+      completions: Array.isArray(parsed.completions) ? parsed.completions : [],
+      gymSchedule: parsed.gymSchedule || null,
+      studyBooks: parsed.studyBooks || null,
+    };
+
+    // 2. If server is online, push to server directly and wait for confirmation
+    if (_serverOnline) {
+      try {
+        const res = await api.importData(payload);
+        return {
+          success: true,
+          count: res?.count || { categories: parsed.categories.length, tasks: parsed.tasks.length }
+        };
+      } catch (err: any) {
+        console.warn('[sync] Direct server import failed, enqueuing for background sync:', err);
+        enqueue('IMPORT_DATA', payload);
+        return {
+          success: true,
+          count: { categories: parsed.categories.length, tasks: parsed.tasks.length }
+        };
+      }
+    } else {
+      // Offline: enqueue in pending sync queue
+      enqueue('IMPORT_DATA', payload);
+      return {
+        success: true,
+        count: { categories: parsed.categories.length, tasks: parsed.tasks.length }
+      };
+    }
+  } catch (err: any) {
+    console.error('[sync] syncImportData error:', err);
+    return { success: false, error: err.message || 'Failed to parse JSON file' };
   }
-  return result;
 }
+
+export const importData = syncImportData;
 
 export function resetData() {
   resetToSeedData();

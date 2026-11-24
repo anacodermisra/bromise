@@ -707,54 +707,138 @@ app.get('/api/export', requireAuth, async (req, res) => {
 });
 
 app.post('/api/import', requireAuth, async (req, res) => {
-  const { categories, tasks, dailyPlans, completions } = req.body;
-  if (!categories || !tasks) return res.status(400).json({ error: 'Invalid backup file' });
+  const { categories, tasks, dailyPlans, completions, gymSchedule, studyBooks } = req.body;
+  if (!categories || !tasks || !Array.isArray(categories) || !Array.isArray(tasks)) {
+    return res.status(400).json({ error: 'Invalid backup file: categories and tasks arrays are required' });
+  }
 
   try {
-    await db.execute({ sql: 'DELETE FROM completions WHERE user_id=?', args: [req.userId] });
-    await db.execute({ sql: 'DELETE FROM daily_plans WHERE user_id=?', args: [req.userId] });
-    await db.execute({ sql: 'DELETE FROM recurrence_rules WHERE user_id=?', args: [req.userId] });
-    await db.execute({ sql: 'DELETE FROM tasks WHERE user_id=?', args: [req.userId] });
-    await db.execute({ sql: 'DELETE FROM categories WHERE user_id=?', args: [req.userId] });
+    const statements = [
+      { sql: 'DELETE FROM completions WHERE user_id = ?', args: [req.userId] },
+      { sql: 'DELETE FROM daily_plans WHERE user_id = ?', args: [req.userId] },
+      { sql: 'DELETE FROM recurrence_rules WHERE user_id = ?', args: [req.userId] },
+      { sql: 'DELETE FROM tasks WHERE user_id = ?', args: [req.userId] },
+      { sql: 'DELETE FROM categories WHERE user_id = ?', args: [req.userId] },
+    ];
 
-    for (const c of categories) {
-      await db.execute({
-        sql: 'INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?)',
-        args: [c.id, req.userId, c.name, c.icon, c.accent, c.position, c.createdAt, c.updatedAt || c.createdAt, 0]
+    const categoryIds = new Set();
+    const now = nowISO();
+
+    for (let i = 0; i < categories.length; i++) {
+      const c = categories[i];
+      const catId = c.id || `cat-${uid()}`;
+      categoryIds.add(catId);
+      const catName = c.name || `Category ${i + 1}`;
+      const catIcon = c.icon || 'Sparkles';
+      const catAccent = c.accent || '#8b5cf6';
+      const catPos = Number.isInteger(c.position) ? c.position : i;
+      const catCreated = c.createdAt || now;
+      const catUpdated = c.updatedAt || catCreated;
+      const archived = (c.archived || c.archivedAt) ? 1 : 0;
+
+      statements.push({
+        sql: 'INSERT INTO categories (id, user_id, name, icon, accent, position, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [catId, req.userId, catName, catIcon, catAccent, catPos, catCreated, catUpdated, archived]
       });
     }
-    const categoryIds = new Set(categories.map(c => c.id));
-    const fallbackCategoryId = categories[0]?.id || null;
+
+    const fallbackCategoryId = categories[0]?.id || (categoryIds.size > 0 ? Array.from(categoryIds)[0] : null);
+
     for (const t of tasks) {
-      const categoryId = categoryIds.has(t.categoryId) ? t.categoryId : fallbackCategoryId;
+      const taskId = t.id || `task-${uid()}`;
+      const catId = (t.categoryId && categoryIds.has(t.categoryId)) ? t.categoryId : fallbackCategoryId;
+      const title = t.title || 'Untitled Task';
+      const notes = t.notes || null;
+      const priority = (t.priority && ['low', 'medium', 'high'].includes(String(t.priority).toLowerCase()))
+        ? String(t.priority).toLowerCase()
+        : 'medium';
+      const deadline = t.deadline || null;
+      const isRecurring = t.isRecurring ? 1 : 0;
+      const createdAt = t.createdAt || now;
+      const updatedAt = t.updatedAt || createdAt;
       const archived = (t.archivedAt || t.archived) ? 1 : 0;
-      await db.execute({
-        sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-        args: [t.id, req.userId, categoryId, t.title, t.notes || null, t.priority, t.deadline || null, t.isRecurring ? 1 : 0, t.createdAt, t.updatedAt, archived]
+
+      statements.push({
+        sql: 'INSERT INTO tasks (id, user_id, category_id, title, notes, priority, deadline, is_recurring, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [taskId, req.userId, catId, title, notes, priority, deadline, isRecurring, createdAt, updatedAt, archived]
       });
-      if (t.recurrenceRule) {
+
+      if (t.recurrenceRule && isRecurring) {
         const rr = t.recurrenceRule;
-        await db.execute({
-          sql: 'INSERT OR IGNORE INTO recurrence_rules (id,user_id,task_id,frequency,start_date,end_date,active) VALUES (?,?,?,?,?,?,?)',
-          args: [rr.id, req.userId, t.id, rr.frequency || 'daily', rr.startDate, rr.endDate || null, rr.active !== false ? 1 : 0]
+        const rrId = rr.id || `rec-${uid()}`;
+        const rrFreq = rr.frequency || 'daily';
+        const rrStart = rr.startDate || createdAt.split('T')[0];
+        const rrEnd = rr.endDate || null;
+        const rrActive = rr.active !== false ? 1 : 0;
+
+        statements.push({
+          sql: 'INSERT OR IGNORE INTO recurrence_rules (id, user_id, task_id, frequency, start_date, end_date, active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          args: [rrId, req.userId, taskId, rrFreq, rrStart, rrEnd, rrActive]
         });
       }
     }
-    for (const p of (dailyPlans || [])) {
+
+    if (Array.isArray(dailyPlans)) {
+      for (let i = 0; i < dailyPlans.length; i++) {
+        const p = dailyPlans[i];
+        if (!p.taskId) continue;
+        const planDate = p.date || now.split('T')[0];
+        const planId = p.id || `plan-${planDate}-${p.taskId}`;
+        const planPos = Number.isInteger(p.position) ? p.position : i;
+        const planSrc = p.sourceType || 'normal';
+        const planStart = p.startTime || null;
+        const planEnd = p.endTime || null;
+        const planDur = Number.isInteger(p.durationMinutes) ? p.durationMinutes : null;
+        const planComp = p.completed ? 1 : 0;
+
+        statements.push({
+          sql: 'INSERT OR IGNORE INTO daily_plans (id, user_id, task_id, date, position, source_type, start_time, end_time, duration_minutes, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          args: [planId, req.userId, p.taskId, planDate, planPos, planSrc, planStart, planEnd, planDur, planComp]
+        });
+      }
+    }
+
+    if (Array.isArray(completions)) {
+      for (const c of completions) {
+        if (!c.taskId) continue;
+        const compDate = c.date || now.split('T')[0];
+        const compId = c.id || `comp-${compDate}-${c.taskId}`;
+        const compCompleted = c.completed !== false ? 1 : 0;
+        const compAt = c.completedAt || (compCompleted ? now : null);
+
+        statements.push({
+          sql: 'INSERT OR IGNORE INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, ?, ?)',
+          args: [compId, req.userId, c.taskId, compDate, compCompleted, compAt]
+        });
+      }
+    }
+
+    // Execute atomic transaction batch
+    await db.batch(statements, 'write');
+
+    // Also persist gymSchedule and studyBooks if included in backup
+    if (gymSchedule || studyBooks) {
+      const existingSettings = await db.execute({
+        sql: 'SELECT gym_schedule, study_books FROM user_settings WHERE user_id = ?',
+        args: [req.userId]
+      });
+      const gymStr = gymSchedule ? JSON.stringify(gymSchedule) : (existingSettings.rows[0]?.gym_schedule || null);
+      const studyStr = studyBooks ? JSON.stringify(studyBooks) : (existingSettings.rows[0]?.study_books || null);
       await db.execute({
-        sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type,start_time,end_time,duration_minutes,completed) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        args: [p.id, req.userId, p.taskId, p.date, p.position, p.sourceType || 'normal', p.startTime || null, p.endTime || null, p.durationMinutes || null, p.completed ? 1 : 0]
+        sql: `INSERT INTO user_settings (user_id, gym_schedule, study_books, updated_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(user_id) DO UPDATE SET
+                gym_schedule = COALESCE(excluded.gym_schedule, user_settings.gym_schedule),
+                study_books = COALESCE(excluded.study_books, user_settings.study_books),
+                updated_at = excluded.updated_at`,
+        args: [req.userId, gymStr, studyStr, now]
       });
     }
-    for (const c of (completions || [])) {
-      await db.execute({
-        sql: 'INSERT OR IGNORE INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)',
-        args: [c.id, req.userId, c.taskId, c.date, c.completed ? 1 : 0, c.completedAt || null]
-      });
-    }
-    res.json({ ok: true });
+
+    res.json({ ok: true, count: { categories: categories.length, tasks: tasks.length } });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('Import failed:', e);
+    res.status(500).json({ error: e.message || 'Import failed' });
   }
 });
 

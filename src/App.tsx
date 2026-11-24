@@ -595,13 +595,7 @@ const MainAppContent: React.FC = () => {
 
       <TaskModal
         isOpen={isTaskModalOpen}
-        onClose={async () => {
-          setIsTaskModalOpen(false);
-          if (serverOnline) {
-            await pullFromServer();
-            reloadLocalData();
-          }
-        }}
+        onClose={() => setIsTaskModalOpen(false)}
         onSave={handleSaveTask}
         categories={categories}
         initialTask={editingTask}

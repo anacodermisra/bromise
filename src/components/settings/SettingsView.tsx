@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   exportDataJSON,
-  importDataJSON,
   resetToSeedData,
   cleanPrefilledTasks,
 } from '../../utils/storage';
+import { syncImportData } from '../../services/syncAdapter';
 import {
   THEMES,
   getStoredTheme,
@@ -38,6 +38,8 @@ import {
   SlidersHorizontal,
   Image as ImageIcon,
   Link2,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_VERSION, APP_RELEASE_NAME } from '../../config/version';
@@ -59,6 +61,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [winterSnow, setWinterSnow] = useState(isWinterArcSnowEnabled());
   const [winterWallpaper, setWinterWallpaper] = useState(isWinterArcWallpaperEnabled());
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Atmosphere and wallpaper settings
   const [wallpaperConfig, setWallpaperConfig] = useState<WallpaperConfig>(getStoredWallpaperConfig());
@@ -167,19 +170,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsImporting(true);
+    setImportStatus('Importing data and syncing to cloud...');
+
     const reader = new FileReader();
-    reader.onload = event => {
+    reader.onload = async event => {
       const content = event.target?.result as string;
       if (content) {
-        const success = importDataJSON(content);
-        if (success) {
-          setImportStatus('Data successfully imported!');
-          onDataImported();
-        } else {
-          setImportStatus('Failed to import data. Please check JSON file format.');
+        try {
+          const res = await syncImportData(content);
+          if (res.success) {
+            const countStr = res.count
+              ? ` (${res.count.tasks} tasks, ${res.count.categories} categories)`
+              : '';
+            setImportStatus(`Data successfully imported and synced${countStr}!`);
+            onDataImported();
+          } else {
+            setImportStatus(res.error || 'Failed to import data. Please check JSON file format.');
+          }
+        } catch (err: any) {
+          setImportStatus('Error importing data: ' + (err.message || 'Unknown error'));
+        } finally {
+          setIsImporting(false);
+          setTimeout(() => setImportStatus(null), 5000);
         }
-        setTimeout(() => setImportStatus(null), 4000);
       }
+    };
+    reader.onerror = () => {
+      setIsImporting(false);
+      setImportStatus('Failed to read the selected backup file.');
+      setTimeout(() => setImportStatus(null), 4000);
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -559,10 +579,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <p className="text-[11px] text-dark-400">
               Restore your complete application state from a previously exported file.
             </p>
-            <label className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-theme-title text-xs font-bold border border-dark-700 cursor-pointer transition-all">
-              <Upload className="w-4 h-4 text-theme-accent" />
-              <span>Select Backup File</span>
-              <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
+            <label className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-theme-title text-xs font-bold border transition-all ${
+              isImporting
+                ? 'bg-dark-900 border-dark-800 text-dark-500 cursor-not-allowed opacity-70'
+                : 'bg-dark-800 hover:bg-dark-750 border-dark-700 cursor-pointer'
+            }`}>
+              {isImporting ? (
+                <Loader2 className="w-4 h-4 text-theme-accent animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 text-theme-accent" />
+              )}
+              <span>{isImporting ? 'Importing & Syncing...' : 'Select Backup File'}</span>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImportFile}
+                disabled={isImporting}
+                className="hidden"
+              />
             </label>
           </div>
         </div>
@@ -570,12 +604,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {importStatus && (
           <div
             className={`p-3 rounded-xl border text-xs font-semibold flex items-center space-x-2 ${
-              importStatus.includes('success')
+              isImporting
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                : importStatus.includes('success')
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
             }`}
           >
-            <Check className="w-4 h-4" />
+            {isImporting ? (
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+            ) : importStatus.includes('success') ? (
+              <Check className="w-4 h-4 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            )}
             <span>{importStatus}</span>
           </div>
         )}

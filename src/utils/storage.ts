@@ -702,6 +702,8 @@ export function exportDataJSON(): string {
       tasks: getTasks(),
       dailyPlans: getDailyPlans(),
       completions: getCompletions(),
+      gymSchedule: getGymSchedule(),
+      studyBooks: getStudyBooks(),
       exportedAt: new Date().toISOString(),
     },
     null,
@@ -723,6 +725,8 @@ export function importDataJSON(jsonStr: string): boolean {
       saveTasks(tasks);
       if (parsed.dailyPlans) saveDailyPlans(parsed.dailyPlans);
       if (parsed.completions) saveCompletions(parsed.completions);
+      if (parsed.gymSchedule) saveGymSchedule(parsed.gymSchedule);
+      if (parsed.studyBooks) saveStudyBooks(parsed.studyBooks);
       return true;
     }
     return false;
