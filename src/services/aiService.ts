@@ -7,6 +7,7 @@ import {
   getGymSchedule,
   getStudyBooks,
   getCategories,
+  getCompletions,
 } from '../utils/storage';
 import {
   syncAddTask,
@@ -357,7 +358,124 @@ export async function resolveCategory(
 }
 
 /**
- * Main command execution entrypoint:
+ * Build the exact database snapshot Bro Bot is allowed to answer from.
+ * Everything here is read fresh from localStorage (which is synced from the server DB).
+ * The LLM is explicitly forbidden from using anything outside this block.
+ */
+function buildDatabaseSnapshot(selectedDate: string): string {
+  const categories = getCategories();
+  const tasks = getTasks();
+  const plans = getDailyPlans();
+  const completions = getCompletions();
+
+  const catName = (id: string) =>
+    categories.find(c => c.id === id)?.name ?? '(category deleted — raw id: ' + id + ')';
+
+  const scheduledDates = (taskId: string) =>
+    Array.from(new Set(plans.filter(p => p.taskId === taskId).map(p => p.date))).sort();
+
+  const completedDates = (taskId: string) =>
+    completions.filter(c => c.taskId === taskId && c.completed).map(c => c.date).sort();
+
+  const activeTasks = tasks.filter(t => !t.archivedAt);
+  const archivedTasks = tasks.filter(t => !!t.archivedAt);
+  const maxTasks = 180;
+
+  const categoryLines = categories.map(c => {
+    const n = activeTasks.filter(t => t.categoryId === c.id).length;
+    return `- id="${c.id}" name="${c.name}" (${n} active task${n === 1 ? '' : 's'})`;
+  });
+
+  const taskLines = activeTasks.slice(0, maxTasks).map(t => {
+    const scheduled = scheduledDates(t.id);
+    const done = completedDates(t.id);
+    const bits = [
+      `id="${t.id}"`,
+      `title="${t.title}"`,
+      `category="${catName(t.categoryId)}"`,
+      `categoryId="${t.categoryId}"`,
+      `priority=${t.priority}`,
+    ];
+    if (t.deadline) bits.push(`deadline=${t.deadline}`);
+    bits.push(`scheduled=[${scheduled.join(', ') || 'none'}]`);
+    bits.push(`completed=[${done.join(', ') || 'never'}]`);
+    if (t.notes) bits.push(`notes="${t.notes}"`);
+    return '- ' + bits.join(' | ');
+  });
+
+  const archivedLines = archivedTasks.slice(0, 40).map(t =>
+    `- title="${t.title}" category="${catName(t.categoryId)}" archivedAt=${t.archivedAt ?? 'unknown'}`
+  );
+
+  const plansByDate = new Map<string, string[]>();
+  plans.forEach(p => {
+    const arr = plansByDate.get(p.date) ?? [];
+    const title = tasks.find(t => t.id === p.taskId)?.title ?? p.taskId;
+    arr.push(title);
+    plansByDate.set(p.date, arr);
+  });
+  const planLines = Array.from(plansByDate.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 60)
+    .map(([date, titles]) => `- ${date}: ${Array.from(new Set(titles)).join(', ')}`);
+
+  const doneByDate = new Map<string, string[]>();
+  completions.filter(c => c.completed).forEach(c => {
+    const arr = doneByDate.get(c.date) ?? [];
+    arr.push(tasks.find(t => t.id === c.taskId)?.title ?? c.taskId);
+    doneByDate.set(c.date, arr);
+  });
+  const historyLines = Array.from(doneByDate.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 60)
+    .map(([date, titles]) => `- ${date}: ${titles.join(', ')}`);
+
+  const orphans = activeTasks.filter(t =>
+    !categories.some(c => c.id === t.categoryId)
+  );
+
+  return [
+    '=== DATABASE SNAPSHOT (read fresh from localStorage, synced from the Turso server DB) ===',
+    `Selected planner date: ${selectedDate}`,
+    `Totals: ${categories.length} categories, ${activeTasks.length} active tasks, ${archivedTasks.length} archived tasks, ${plans.length} plan rows, ${completions.length} completion rows`,
+    '',
+    '=== CATEGORIES — this is the complete authoritative category list ===',
+    categoryLines.join('\n') || '(none stored)',
+    '',
+    '=== ACTIVE TASKS — search ALL of these for name/keyword questions ===',
+    taskLines.join('\n') || '(none stored)',
+    activeTasks.length > maxTasks ? `(${activeTasks.length - maxTasks} more active tasks omitted — say so if you hit the limit)` : '',
+    '',
+    '=== ARCHIVED / DELETED TASKS — never present these as active ===',
+    archivedLines.join('\n') || '(none)',
+    '',
+    '=== DAILY PLANS BY DATE — use for "today", "scheduled", and date questions ===',
+    planLines.join('\n') || '(none)',
+    '',
+    '=== COMPLETION HISTORY BY DATE — use for "old data", "history", "completed", "streak" questions ===',
+    historyLines.join('\n') || '(none)',
+    '',
+    '=== ORPHANED TASKS (category was deleted from the database) ===',
+    orphans.length
+      ? orphans.slice(0, 20).map(t => `- "${t.title}" has raw categoryId ${t.categoryId}`).join('\n')
+      : '(none)',
+    '=== END DATABASE SNAPSHOT ===',
+  ].filter(Boolean).join('\n');
+}
+
+/** Find a category strictly from the authoritative stored list. */
+function findStoredCategory(name: string): Category | null {
+  const clean = name.trim().toLowerCase().replace(/^["']|["']$/g, '');
+  if (!clean) return null;
+  const cats = getCategories();
+  const exact = cats.find(c => c.name.toLowerCase() === clean);
+  if (exact) return exact;
+  return cats.find(c =>
+    c.name.toLowerCase().includes(clean) || clean.includes(c.name.toLowerCase())
+  ) ?? null;
+}
+
+/** Main command execution entrypoint:
  * Understands both human natural language (via Gemini LLM) and deterministic direct commands.
  */
 export async function executeBroCommand(
@@ -424,6 +542,176 @@ You can speak in **natural English** or use fast direct commands:
     return {
       reply: "All prefilled sample tasks have already been cleared. You're running lean and focused, Bro!",
       actionTaken: 'deleted_prefilled',
+      success: true,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2a. Database / data-source questions — answered from stored records
+  // ─────────────────────────────────────────────────────────────
+  if (
+    lower === 'database' ||
+    lower === 'show database' ||
+    lower.includes('where do you get your data') ||
+    lower.includes('source of data') ||
+    lower.includes('which database')
+  ) {
+    const cats = getCategories();
+    const allTasks = getTasks();
+    return {
+      reply: [
+        '**BROMISE database:**',
+        `• Categories: ${cats.length}`,
+        `• Tasks: ${allTasks.filter(t => !t.archivedAt).length} active, ${allTasks.filter(t => t.archivedAt).length} archived`,
+        `• Daily plan rows: ${getDailyPlans().length}`,
+        `• Completion rows: ${getCompletions().length}`,
+        '',
+        'I read these records from this browser\'s localStorage, which is synced with the Turso server database. Settings → Database Viewer shows every raw record.',
+      ].join('\n'),
+      success: true,
+    };
+  }
+
+  // Today's tasks — deterministic, no LLM guessing
+  if (lower.includes("today's task") || lower === 'today' || lower === 'today tasks') {
+    const plans = getDailyPlans().filter(p => p.date === selectedDate);
+    const tasks = getTasks().filter(t => !t.archivedAt && plans.some(p => p.taskId === t.id));
+    const categories = getCategories();
+    if (tasks.length === 0) {
+      return {
+        reply: `No tasks are scheduled for ${selectedDate} in the database.`,
+        success: true,
+      };
+    }
+    const lines = tasks.map(t => {
+      const done = getCompletions().some(c => c.taskId === t.id && c.date === selectedDate && c.completed);
+      const cat = categories.find(c => c.id === t.categoryId)?.name ?? '(deleted category)';
+      return `${done ? '✅' : '⏳'} **${t.title}** — ${cat}${done ? ' (done)' : ''}`;
+    });
+    return {
+      reply: `**Tasks scheduled for ${selectedDate}:**\n\n${lines.join('\n')}`,
+      success: true,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2b. Category questions — resolved against the authoritative stored category list
+  // ─────────────────────────────────────────────────────────────
+  const categoryQuery =
+    query.match(/^(?:(?:list|show|view|what\s+are\s+my)\s+)?tasks?\s+(?:in|under|from|of)\s+(.+?)\s*\??$/i) ||
+    query.match(/^(.+?)\s+(?:category\s+)?tasks?\s*\??$/i);
+
+  if (categoryQuery) {
+    const rawCategory = categoryQuery[1].replace(/\s+category\s*$/i, '').replace(/^["']|["']$/g, '').trim();
+    const isCommandWord = /^(?:list|show|view|my|all|what are my|give|find|search|today|tomorrow|yesterday|scheduled|the|a)$/i.test(rawCategory);
+    if (rawCategory && !isCommandWord) {
+      const cat = findStoredCategory(rawCategory);
+      if (cat) {
+        const matching = getTasks().filter(t => !t.archivedAt && t.categoryId === cat.id);
+        const plans = getDailyPlans();
+        if (matching.length === 0) {
+          return {
+            reply: `The **${cat.name}** category exists, but it has no active tasks in the database.`,
+            success: true,
+          };
+        }
+        const lines = matching.map(t => {
+          const dates = Array.from(new Set(plans.filter(p => p.taskId === t.id).map(p => p.date))).sort();
+          const done = getCompletions().some(c => c.taskId === t.id && c.date === selectedDate && c.completed);
+          return `• **${t.title}**${dates.length ? ` — scheduled ${dates.join(', ')}` : ''}${done ? ' (done on selected date)' : ''}`;
+        });
+        return {
+          reply: `**${matching.length} task(s) in ${cat.name}:**\n\n${lines.join('\n')}`,
+          success: true,
+        };
+      }
+      const explicitlyCategory =
+        /\bcategory\b/i.test(query) ||
+        /^(?:(?:list|show|view|what\s+are\s+my)\s+)?tasks?\s+(?:in|under|from|of)\b/i.test(query);
+      if (explicitlyCategory) {
+        const available = getCategories().map(c => c.name).join(', ');
+        return {
+          reply: `No category named **${rawCategory}** exists in the database. Available categories: ${available || '(none)'}.`,
+          success: true,
+        };
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2c. Task lookup questions — search ALL active tasks, every date
+  // ─────────────────────────────────────────────────────────────
+  const taskSearch =
+    query.match(/^(?:is|are)\s+there\s+(?:any\s+)?tasks?\s+(?:for|about|on|named|called|matching)\s+(.+?)\s*\??$/i) ||
+    query.match(/^(?:do|does)\s+(?:i|my)\s+have\s+(?:any\s+)?(.+?)\s+tasks?\s*\??$/i) ||
+    query.match(/^(?:find|search)\s+(?:for\s+)?(?:tasks?\s+(?:for|about|named|called)\s+)?(.+?)\s*\??$/i) ||
+    query.match(/^any\s+task\s+for\s+(.+?)\s*\??$/i);
+
+  if (taskSearch) {
+    const needle = taskSearch[1].replace(/^["']|["']$/g, '').trim().toLowerCase();
+    const isDateWord = /^(today|tomorrow|yesterday|this week|last week|all)$/.test(needle);
+    if (needle && !isDateWord) {
+      const categories = getCategories();
+      const plans = getDailyPlans();
+      const activeTasks = getTasks().filter(t => !t.archivedAt);
+      const tokens = needle.split(/[\s,.:;!?'"-]+/).filter(t => t.length >= 2);
+      const matches = activeTasks.filter(t => {
+        const title = t.title.toLowerCase();
+        const cat = (categories.find(c => c.id === t.categoryId)?.name ?? '').toLowerCase();
+        return title.includes(needle) || needle.includes(title) || cat.includes(needle) ||
+          tokens.some(tok => title.includes(tok) || cat.includes(tok));
+      });
+      if (matches.length === 0) {
+        const sample = activeTasks.slice(0, 8).map(t => `"${t.title}"`).join(', ');
+        return {
+          reply: `No active task matching **${needle}** in the database.${sample ? ` Existing tasks include: ${sample}` : ''}`,
+          success: true,
+        };
+      }
+      const lines = matches.slice(0, 15).map(t => {
+        const dates = Array.from(new Set(plans.filter(p => p.taskId === t.id).map(p => p.date))).sort();
+        const cat = categories.find(c => c.id === t.categoryId)?.name ?? '(deleted category)';
+        return `• **${t.title}** — category: ${cat}${dates.length ? `, scheduled ${dates.join(', ')}` : ''}`;
+      });
+      return {
+        reply: `${matches.length} matching task(s):\n\n${lines.join('\n')}`,
+        success: true,
+      };
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 2d. Historical / old-data questions
+  // ─────────────────────────────────────────────────────────────
+  if (
+    lower.includes('old data') ||
+    lower === 'history' ||
+    lower.includes('completed tasks') ||
+    lower.includes('past tasks') ||
+    lower.includes('yesterday') ||
+    lower.includes('last week')
+  ) {
+    const tasks = getTasks();
+    const completions = getCompletions().filter(c => c.completed);
+    const plans = getDailyPlans();
+    const doneByDate = new Map<string, string[]>();
+    completions.forEach(c => {
+      const arr = doneByDate.get(c.date) ?? [];
+      arr.push(tasks.find(t => t.id === c.taskId)?.title ?? c.taskId);
+      doneByDate.set(c.date, arr);
+    });
+    const recent = Array.from(doneByDate.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, 10)
+      .map(([date, titles]) => `• **${date}**: ${titles.join(', ')}`)
+      .join('\n');
+    return {
+      reply: [
+        `**Stored history:** ${plans.length} plan rows across ${new Set(plans.map(p => p.date)).size} dates, ${completions.length} completion records, ${tasks.filter(t => t.archivedAt).length} archived tasks.`,
+        recent ? `\nRecent completed dates:\n${recent}` : '\nNo completed tasks recorded yet.',
+        '',
+        'Full history is in the Database Viewer (Settings → Database Viewer → Daily Plans / Completions).',
+      ].join('\n'),
       success: true,
     };
   }
@@ -775,7 +1063,7 @@ You can speak in **natural English** or use fast direct commands:
   // ─────────────────────────────────────────────────────────────
   if (config.provider === 'ollama' && config.endpointUrl) {
     try {
-      const ollamaResult = await callOllamaLLM(query, categories, selectedDate, config);
+      const ollamaResult = await callOllamaLLM(query, selectedDate, config);
       if (ollamaResult) return ollamaResult;
     } catch (e) {
       console.warn('Ollama call failed:', e);
@@ -899,60 +1187,39 @@ async function callGeminiLLM(
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey?.trim()}`;
 
   const todayStr = formatDateKey(new Date());
-  const categoryNames = categories.map(c => c.name);
-  
-  // Get tasks actually scheduled for the selected date via daily plans
-  const allPlans = getDailyPlans();
-  const todayPlans = allPlans.filter(p => p.date === selectedDate);
-  const todayTaskIds = todayPlans.map(p => p.taskId);
-  const todayTasks = getTasks().filter(t => todayTaskIds.includes(t.id) && !t.archivedAt);
-  
-  const taskSummaries = todayTasks
-    .slice(0, 20)
-    .map(t => `"${t.title}" (Done: ${isTaskCompletedOnDate(t.id, selectedDate)})`)
-    .join(', ');
-  
-  const activeTasks = getTasks().filter(t => !t.archivedAt);
-  const activeTaskSummaries = activeTasks
-    .slice(0, 10)
-    .map(t => `"${t.title}"`)
-    .join(', ');
+  const databaseSnapshot = buildDatabaseSnapshot(selectedDate);
 
-  const systemInstructions = `You are Bro Bot, a helpful task assistant for BROMISE ("Do it for your younger self").
-You understand natural language and help users manage their tasks.
+  const systemInstructions = `You are Bro Bot, the task assistant for BROMISE ("Do it for your younger self").
+You answer questions strictly from the app's stored records.
 
-Current App State:
-- Today's Date: ${todayStr}
-- Currently Selected Planner Date: ${selectedDate}
-- Tasks Scheduled for ${selectedDate}: ${taskSummaries || 'None yet'}
-- All Active Tasks (backlog): ${activeTaskSummaries || 'None yet'}
-- Categories: ${categoryNames.join(', ')}
+=== STRICT DATA SOURCE (highest priority rules) ===
+1. The DATABASE SNAPSHOT at the bottom is the ONLY valid source of truth. It is generated fresh from BROMISE localStorage, which is synced from the Turso server database. Never use memory, assumptions, or earlier conversation as evidence.
+2. A category exists if and only if it appears under CATEGORIES. If a name is not there, say it is not in the database. Never claim a category exists or does not exist from intuition.
+3. A task's category is determined ONLY by its categoryId. When it says "(category deleted — raw id: ...)", the parent category was deleted; report that honestly instead of guessing.
+4. "Today's tasks" / "scheduled" / a specific date: use DAILY PLANS BY DATE for that date only.
+5. Name or keyword searches (for example "any task for ey", "linkedin tasks", "minorproject task"): search the ENTIRE ACTIVE TASKS list across all dates, not just today's plan. Compare loosely — short tokens like "ey" must match a task titled "EY".
+6. "Old data", "history", "completed", "yesterday", "last week", streaks: use COMPLETION HISTORY BY DATE and DAILY PLANS BY DATE across all dates.
+7. ARCHIVED / DELETED TASKS are never active. Never include them in a "my tasks" or "today" answer unless the user explicitly asks about deleted items.
+8. Categories are never tasks. Never list a category as a task.
+9. If the answer is not present in the snapshot, say so plainly and point the user to Settings → Database Viewer. Never invent tasks, categories, dates, counts, or completion states.
+10. Answer directly and concisely. Do not give unsolicited motivational speeches, military language, or "bro" pep talks.
 
-RULES:
-1. Answer the user's question directly and clearly. Do not give unsolicited motivational speeches.
-2. If asked about "today's tasks", list only tasks actually scheduled for today's date.
-3. If asked about categories or master list, list those clearly.
-4. If the user wants to perform a task action (add, complete, remove, reschedule, clear), output a JSON execution block at the start:
+=== OUTPUT FORMAT ===
+For questions, answer in plain markdown with bullets when listing items. Include category and status where useful.
+For task actions only, put a JSON block at the very start:
 \`\`\`json
 {
   "action": "add_task" | "complete_task" | "unmark_task" | "remove_task" | "reschedule_task" | "clear_completed" | "none",
   "taskTitle": "matched or new task title",
-  "category": "category name (optional for adds)",
+  "category": "exact category name from CATEGORIES",
   "assignDate": "YYYY-MM-DD",
   "targetDate": "YYYY-MM-DD",
   "priority": "low" | "medium" | "high"
 }
 \`\`\`
-5. After a successful action, you may give a brief, encouraging confirmation (1 sentence max).
-6. For general questions or greetings, respond naturally without military/bro speak.
+After a successful action, at most one short confirmation sentence. For greetings, just greet normally.
 
-Examples:
-- "check today's tasks" -> List tasks scheduled for today only, no preaching
-- "add gym workout today" -> JSON action block + brief confirmation
-- "hello" -> Friendly greeting, no JSON block
-- "is there any minorproject task" -> Answer based on what tasks exist, ask for clarification if needed
-
-Be helpful, direct, and concise.`;
+${databaseSnapshot}`;
 
   const payload = {
     contents: [
@@ -966,7 +1233,7 @@ Be helpful, direct, and concise.`;
     ],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 350,
+      maxOutputTokens: 900,
     },
   };
 
@@ -1141,15 +1408,21 @@ Be helpful, direct, and concise.`;
  */
 async function callOllamaLLM(
   query: string,
-  categories: Category[],
   selectedDate: string,
   config: AIConfig
 ): Promise<BroActionResult | null> {
-  const categoryNames = categories.map(c => c.name).join(', ');
-  const systemPrompt = `You are Bro Bot, the disciplined, high-performance tactical assistant for BROMISE ("Do it for your younger self").
-Available task categories: ${categoryNames}.
-Selected date: ${selectedDate}.
-Keep responses concise, energetic, and tactical. You can help users organize their tasks, plan their workouts, and conquer their daily goals.`;
+  const databaseSnapshot = buildDatabaseSnapshot(selectedDate);
+  const systemPrompt = `You are Bro Bot, the task assistant for BROMISE ("Do it for your younger self").
+Answer strictly from the DATABASE SNAPSHOT below. It is read fresh from the app's localStorage, synced from the Turso server DB.
+- A category exists only if it appears under CATEGORIES. Never guess categories.
+- Search ALL ACTIVE TASKS for name/keyword questions, not just today's plan.
+- Use DAILY PLANS BY DATE for today/scheduled questions.
+- Use COMPLETION HISTORY BY DATE for old data, history, completed tasks.
+- Archived tasks are never active. Categories are never tasks.
+- If the answer is not in the snapshot, say so plainly and point to Settings → Database Viewer. Never invent data.
+- Be direct and concise. No motivational speeches or military language.
+
+${databaseSnapshot}`;
 
   const res = await fetch(`${config.endpointUrl.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',

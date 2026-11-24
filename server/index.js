@@ -723,10 +723,14 @@ app.post('/api/import', requireAuth, async (req, res) => {
         args: [c.id, req.userId, c.name, c.icon, c.accent, c.position, c.createdAt, c.updatedAt || c.createdAt, 0]
       });
     }
+    const categoryIds = new Set(categories.map(c => c.id));
+    const fallbackCategoryId = categories[0]?.id || null;
     for (const t of tasks) {
+      const categoryId = categoryIds.has(t.categoryId) ? t.categoryId : fallbackCategoryId;
+      const archived = (t.archivedAt || t.archived) ? 1 : 0;
       await db.execute({
         sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at,archived) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-        args: [t.id, req.userId, t.categoryId, t.title, t.notes || null, t.priority, t.deadline || null, t.isRecurring ? 1 : 0, t.createdAt, t.updatedAt, 0]
+        args: [t.id, req.userId, categoryId, t.title, t.notes || null, t.priority, t.deadline || null, t.isRecurring ? 1 : 0, t.createdAt, t.updatedAt, archived]
       });
       if (t.recurrenceRule) {
         const rr = t.recurrenceRule;
@@ -738,8 +742,8 @@ app.post('/api/import', requireAuth, async (req, res) => {
     }
     for (const p of (dailyPlans || [])) {
       await db.execute({
-        sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)',
-        args: [p.id, req.userId, p.taskId, p.date, p.position, p.sourceType || 'normal']
+        sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type,start_time,end_time,duration_minutes,completed) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        args: [p.id, req.userId, p.taskId, p.date, p.position, p.sourceType || 'normal', p.startTime || null, p.endTime || null, p.durationMinutes || null, p.completed ? 1 : 0]
       });
     }
     for (const c of (completions || [])) {

@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_VERSION, APP_RELEASE_NAME } from '../../config/version';
+import { DatabaseViewer } from './DatabaseViewer';
 
 interface SettingsViewProps {
   onDataReset: () => void;
@@ -584,6 +585,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Exact local database records — the source Bro Bot reads */}
+      <DatabaseViewer />
 
       {/* Data Management & Clean-up */}
       <div className="p-6 rounded-3xl bg-dark-900 border border-dark-800 space-y-5">

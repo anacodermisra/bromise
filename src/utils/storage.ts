@@ -713,8 +713,14 @@ export function importDataJSON(jsonStr: string): boolean {
   try {
     const parsed = JSON.parse(jsonStr);
     if (parsed.categories && parsed.tasks) {
-      saveCategories(parsed.categories);
-      saveTasks(parsed.tasks);
+      const cats: Category[] = parsed.categories;
+      const validIds = new Set(cats.map(c => c.id));
+      const fallbackId = cats[0]?.id ?? 'cat-general';
+      const tasks: Task[] = parsed.tasks.map((t: Task) =>
+        validIds.has(t.categoryId) ? t : { ...t, categoryId: fallbackId }
+      );
+      saveCategories(cats);
+      saveTasks(tasks);
       if (parsed.dailyPlans) saveDailyPlans(parsed.dailyPlans);
       if (parsed.completions) saveCompletions(parsed.completions);
       return true;
