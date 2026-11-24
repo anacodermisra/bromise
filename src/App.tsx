@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import { CheckCircle2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import {
@@ -109,7 +110,15 @@ const MainAppContent: React.FC = () => {
   const [isDeleteCategoryModalOpen, setIsDeleteCategoryModalOpen] = useState(false);
   const [deletingCategory, setDeletingCategory] = useState<Category | null>(null);
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(true);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = window.setTimeout(() => setToastMessage(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toastMessage]);
 
   useEffect(() => {
     const handleOpenUpdate = () => setIsUpdateModalOpen(true);
@@ -297,21 +306,27 @@ const MainAppContent: React.FC = () => {
     }
   };
 
-  const handleSaveTask = async (
+  const handleSaveTask = (
     taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> | Partial<Task>,
     id?: string
   ) => {
     try {
-      if (id) {
-        await syncUpdateTask(id, taskData);
-      } else {
-        await syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
-      }
-      // Always pull fresh data from server so tasks are up to date
-      if (serverOnline) {
-        await pullFromServer();
-      }
+      // Both sync helpers write to LocalStorage synchronously before awaiting
+      // the API, so the UI can update immediately while the server catches up.
+      const savePromise = id
+        ? syncUpdateTask(id, taskData)
+        : syncAddTask(taskData as Omit<Task, 'id' | 'createdAt' | 'updatedAt'>);
+
       reloadLocalData();
+      setToastMessage(id ? 'Changes saved' : 'Task added');
+
+      savePromise
+        .then(() => (serverOnline ? pullFromServer() : undefined))
+        .then(() => reloadLocalData())
+        .catch((error) => {
+          console.error('Failed to save task:', error);
+          alert('Failed to save task. Please try again.');
+        });
     } catch (error) {
       console.error('Failed to save task:', error);
       alert('Failed to save task. Please try again.');
@@ -417,6 +432,16 @@ const MainAppContent: React.FC = () => {
       {!serverOnline && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500/90 text-dark-950 text-xs font-bold text-center py-1 tracking-wide">
           ⚡ Offline mode — changes saved locally and will sync when server reconnects
+        </div>
+      )}
+
+      {toastMessage && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] pointer-events-none flex items-center space-x-2 px-4 py-2.5 rounded-2xl bg-dark-900/95 border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-[0_0_30px_-8px_rgba(16,185,129,0.5)] animate-fade-in backdrop-blur-md"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastMessage}</span>
         </div>
       )}
 

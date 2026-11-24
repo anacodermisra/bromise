@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bromise-v1.3.1';
+const CACHE_NAME = 'bromise-v1.3.2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   '/icon-apple.png',
   '/logo.png',
   '/favicon.svg',
+  '/update-hero.jpg',
 ];
 
 // Install: cache core static assets

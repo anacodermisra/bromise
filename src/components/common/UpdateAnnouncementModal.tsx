@@ -55,7 +55,7 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
         {/* TOP HERO IMAGE BANNER */}
         <div className="relative h-48 sm:h-52 w-full overflow-hidden flex-shrink-0 bg-dark-900 select-none">
           <img
-            src="/winter-arc-bg.jpg"
+            src="/update-hero.jpg"
             alt="Winter Arc Samurai"
             className="w-full h-full object-cover object-top filter brightness-105 contrast-105"
           />

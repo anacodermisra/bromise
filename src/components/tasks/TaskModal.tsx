@@ -26,6 +26,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [priority, setPriority] = useState<Priority>('medium');
   const [deadline, setDeadline] = useState<string>('');
   const [isRecurring, setIsRecurring] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -58,16 +59,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setDeadline(d.toISOString().split('T')[0]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !categoryId) return;
+
+    const targetCategoryId = categoryId || categories[0]?.id || '';
+    if (!title.trim()) {
+      setError('Please enter a task title.');
+      return;
+    }
+    if (!targetCategoryId) {
+      setError('No category is available yet. Please try again in a moment.');
+      return;
+    }
+    setError('');
 
     if (initialTask) {
-      await onSave(
+      onSave(
         {
           title: title.trim(),
           notes: notes.trim() || undefined,
-          categoryId,
+          categoryId: targetCategoryId,
           priority,
           deadline: deadline || undefined,
           isRecurring,
@@ -84,10 +95,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         initialTask.id
       );
     } else {
-      await onSave({
+      onSave({
         title: title.trim(),
         notes: notes.trim() || undefined,
-        categoryId,
+        categoryId: targetCategoryId,
         priority,
         deadline: deadline || undefined,
         isRecurring,
@@ -102,6 +113,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           : undefined,
       });
     }
+
+    // Local storage is written synchronously by onSave, so the task is already
+    // persisted. Close now instead of making the user wait for the server pull.
     onClose();
   };
 
@@ -121,6 +135,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 rounded-xl text-dark-500 hover:text-theme-title hover:bg-dark-800 transition-colors"
           >
@@ -137,10 +152,16 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               required
               placeholder="e.g. Read module 3 case study"
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={e => {
+                setTitle(e.target.value);
+                if (error) setError('');
+              }}
               className="w-full bg-dark-950 border border-dark-800 rounded-xl px-4 py-2.5 text-sm text-theme-title placeholder-dark-600 focus:outline-none focus:border-theme-accent transition-colors"
               autoFocus
             />
+            {error && (
+              <p className="text-[11px] font-semibold text-rose-400" role="alert">{error}</p>
+            )}
           </div>
 
           {/* Category */}
