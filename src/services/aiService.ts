@@ -780,10 +780,10 @@ You can speak in **natural English** or use fast direct commands:
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 9. Default Tactical Guidance Fallback
+  // 9. Default Fallback (when Gemini unavailable)
   // ─────────────────────────────────────────────────────────────
   return {
-    reply: `Bro Bot standing by. Here are fast commands you can run right now:
+    reply: `Here are quick task commands you can use:
 
 • **add task [title] in [category] assign today**
 • **remove task [title]**
@@ -791,9 +791,8 @@ You can speak in **natural English** or use fast direct commands:
 • **unmark task [title]**
 • **reschedule task [title] to tomorrow**
 • **clear completed**
-• **Daily battle plan**
 
-*Tip: Connect your Google Gemini API key in drawer Config to speak freely in full natural human conversation!*`,
+Tip: Connect your Google Gemini API key in Config to speak freely in natural conversation.`,
     success: true,
   };
 }
