@@ -5,6 +5,7 @@ import {
   getTodayDayKey,
   DAY_KEYS,
   MUSCLE_REGISTRY,
+  DEFAULT_GYM_SCHEDULE,
 } from '../../utils/gymData';
 import { getGymSchedule, saveGymSchedule } from '../../utils/storage';
 import confetti from 'canvas-confetti';
@@ -184,6 +185,14 @@ export const GymRoomView: React.FC<GymRoomViewProps> = ({ onPushToToday }) => {
     saveGymSchedule(nextSchedule);
   };
 
+  // Reset to Recommended Protocol
+  const handleResetToDefaultSchedule = () => {
+    if (window.confirm('Reset workout schedule to the recommended 7-day routine? Any custom exercises will be reset.')) {
+      setSchedule(DEFAULT_GYM_SCHEDULE);
+      saveGymSchedule(DEFAULT_GYM_SCHEDULE);
+    }
+  };
+
   // Push Workout to Bromise Today
   const handleSyncToToday = () => {
     if (onPushToToday) {
@@ -238,6 +247,16 @@ export const GymRoomView: React.FC<GymRoomViewProps> = ({ onPushToToday }) => {
             <Dumbbell className="w-3.5 h-3.5 text-cyan-300" />
             <span>The Iron Den Atmosphere</span>
           </div>
+
+          <button
+            type="button"
+            onClick={handleResetToDefaultSchedule}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/30 text-white text-xs font-bold shadow-sm backdrop-blur-md transition-colors"
+            title="Reset to recommended 7-day routine"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Reset Routine</span>
+          </button>
 
           {onPushToToday && (
             <button
