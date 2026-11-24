@@ -25,8 +25,8 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   enabled: true,
   provider: 'gemini',
   endpointUrl: 'https://generativelanguage.googleapis.com/v1beta',
-  model: 'gemini-3.5-flash',
-  geminiModel: 'gemini-3.5-flash',
+  model: 'gemini-3.6-flash',
+  geminiModel: 'gemini-3.6-flash',
   apiKey: '',
   autoExecuteActions: true,
 };
@@ -36,13 +36,14 @@ export function getStoredAIConfig(): AIConfig {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Migrate legacy deprecated models (1.5-flash, 1.5-pro, 2.0-flash)
+      // Migrate legacy deprecated models (1.5-flash, 1.5-pro, 2.0-flash, 3.5-flash)
       if (
         !parsed.geminiModel ||
         parsed.geminiModel.startsWith('gemini-1.5') ||
-        parsed.geminiModel === 'gemini-2.0-flash'
+        parsed.geminiModel === 'gemini-2.0-flash' ||
+        parsed.geminiModel === 'gemini-3.5-flash'
       ) {
-        parsed.geminiModel = 'gemini-3.5-flash';
+        parsed.geminiModel = 'gemini-3.6-flash';
       }
       return { ...DEFAULT_AI_CONFIG, ...parsed };
     }
@@ -71,9 +72,9 @@ export function getActiveAIModelInfo(config = getStoredAIConfig()): ActiveModelI
     if (config.apiKey && config.apiKey.trim().length > 0) {
       return {
         providerName: 'Google Gemini',
-        modelName: config.geminiModel || 'gemini-3.5-flash',
+        modelName: config.geminiModel || 'gemini-3.6-flash',
         isCloud: true,
-        statusText: `Cloud LLM Active (${config.geminiModel || 'gemini-3.5-flash'})`,
+        statusText: `Cloud LLM Active (${config.geminiModel || 'gemini-3.6-flash'})`,
       };
     }
     return {
@@ -188,7 +189,7 @@ export function findMatchingTask(targetQuery: string, tasks = getTasks()): Task 
  */
 export async function testGeminiConnection(
   apiKey: string,
-  model = 'gemini-3.5-flash'
+  model = 'gemini-3.6-flash'
 ): Promise<{ ok: boolean; message: string }> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
@@ -229,7 +230,7 @@ export async function testLocalAIConnection(
 ): Promise<{ ok: boolean; message: string; models?: string[] }> {
   try {
     if (config.provider === 'gemini') {
-      const res = await testGeminiConnection(config.apiKey || '', config.geminiModel || 'gemini-3.5-flash');
+      const res = await testGeminiConnection(config.apiKey || '', config.geminiModel || 'gemini-3.6-flash');
       return { ok: res.ok, message: res.message };
     }
 
@@ -885,7 +886,7 @@ async function callGeminiLLM(
   selectedDate: string,
   config: AIConfig
 ): Promise<BroActionResult | null> {
-  const model = config.geminiModel || 'gemini-3.5-flash';
+  const model = config.geminiModel || 'gemini-3.6-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey?.trim()}`;
 
   const todayStr = formatDateKey(new Date());
@@ -944,16 +945,30 @@ After the JSON block, give your brief motivational confirmation.`;
     },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10000),
-  });
+  let res: Response | null = null;
+  let lastErr: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) break;
+      lastErr = await res.text().catch(() => res?.statusText || '');
+      if (res.status !== 503) break;
+      console.warn(`Gemini 503 retry ${attempt + 1}/3: ${lastErr}`);
+    } catch (err: any) {
+      lastErr = err.message;
+      if (attempt === 2) break;
+    }
+    // small backoff between retries
+    await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+  }
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.warn(`Gemini API error ${res.status}:`, errText);
+  if (!res || !res.ok) {
+    console.warn(`Gemini API error ${res?.status}:`, lastErr);
     return null;
   }
 
