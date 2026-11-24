@@ -125,7 +125,8 @@ export interface BroActionResult {
     | 'daily_brief'
     | 'gym_info'
     | 'study_info'
-    | 'task_not_found';
+    | 'task_not_found'
+    | 'ai_temporarily_unavailable';
   details?: string;
   success: boolean;
 }
@@ -755,8 +756,14 @@ You can speak in **natural English** or use fast direct commands:
     try {
       const geminiResult = await callGeminiLLM(query, categories, selectedDate, config);
       if (geminiResult) return geminiResult;
+      // Gemini returned null — temporarily unavailable after all retries
+      return {
+        reply: `**Gemini is temporarily overloaded.** Try again in a moment, or switch models in Config!\n\nQuick offline commands:\n• **add task [title] in [category]**\n• **mark task [title] as done**\n• **remove task [title]**\n• **clear completed**`,
+        actionTaken: 'ai_temporarily_unavailable',
+        success: false,
+      };
     } catch (e: any) {
-      console.warn('Gemini call failed, falling back to local reasoning:', e);
+      console.warn('Gemini call failed:', e);
     }
   }
 
@@ -947,24 +954,24 @@ After the JSON block, give your brief motivational confirmation.`;
 
   let res: Response | null = null;
   let lastErr: string | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     try {
       res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(12000),
       });
       if (res.ok) break;
       lastErr = await res.text().catch(() => res?.statusText || '');
       if (res.status !== 503) break;
-      console.warn(`Gemini 503 retry ${attempt + 1}/3: ${lastErr}`);
+      console.warn(`Gemini 503 retry ${attempt + 1}/5: ${lastErr}`);
     } catch (err: any) {
       lastErr = err.message;
-      if (attempt === 2) break;
+      if (attempt === 4) break;
     }
-    // small backoff between retries
-    await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    // backoff between retries (1.2s, 2.4s, 3.6s, 4.8s)
+    await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
   }
 
   if (!res || !res.ok) {
