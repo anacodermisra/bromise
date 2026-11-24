@@ -7,6 +7,8 @@ import {
   ArrowRight,
   ShieldCheck,
   CheckCircle2,
+  Dumbbell,
+  BookOpen,
 } from 'lucide-react';
 import { applyTheme, getStoredTheme } from '../../utils/theme';
 
@@ -80,7 +82,7 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
               BROMISE 1.3 UPDATE
             </h2>
             <p className="text-xs text-cyan-200/90 font-medium drop-shadow">
-              Your wallpaper, your focus — and a task name that stays put.
+              Your wallpaper, your rooms — and a task name that stays put.
             </p>
           </div>
         </div>
@@ -89,7 +91,7 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs sm:text-sm text-slate-200 scrollbar-thin scrollbar-thumb-dark-700">
           <div className="p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/20 text-cyan-100 text-xs leading-relaxed">
             <p>
-              Version 1.3 puts you in control of the backdrop. Add a custom image by link or upload, then fine-tune dimming and blur. We also fixed the new-task title resetting during background refreshes.
+              Version 1.3 puts you in control of the backdrop. Add a custom image by link or upload, then fine-tune dimming and blur. The Gym and Study Rooms keep their own dedicated scenes, and the new-task title no longer resets during background refreshes.
             </p>
           </div>
 
@@ -110,7 +112,19 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
               </p>
             </div>
 
-            {/* Feature 2: Task Name Fix */}
+            {/* Feature 2: Gym & Study Rooms */}
+            <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
+              <div className="flex items-center space-x-2 text-amber-300 font-bold text-xs">
+                <Dumbbell className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <BookOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span>Gym &amp; Study Rooms</span>
+              </div>
+              <p className="text-slate-300 text-xs leading-relaxed">
+                Two dedicated spaces for workouts and reading, each with its own backdrop. Your custom wallpaper applies to the main views and leaves the room scenes untouched.
+              </p>
+            </div>
+
+            {/* Feature 3: Task Name Fix */}
             <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
               <div className="flex items-center space-x-2 text-purple-300 font-bold text-xs">
                 <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
@@ -121,7 +135,7 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
               </p>
             </div>
 
-            {/* Feature 3: Cleaner Preferences */}
+            {/* Feature 4: Cleaner Preferences */}
             <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
               <div className="flex items-center space-x-2 text-emerald-300 font-bold text-xs">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
