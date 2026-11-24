@@ -103,6 +103,7 @@ const MainAppContent: React.FC = () => {
 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [defaultCategoryIdForTask, setDefaultCategoryIdForTask] = useState<string | null>(null);
 
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -359,8 +360,10 @@ const MainAppContent: React.FC = () => {
     try {
       if (id) {
         await syncUpdateCategory(id, catData);
+        setToastMessage('Category updated 🎉');
       } else {
         await syncAddCategory(catData as Omit<Category, 'id' | 'createdAt' | 'position'>);
+        setToastMessage('Category created 🎉');
       }
       reloadLocalData();
     } catch (error) {
@@ -380,6 +383,7 @@ const MainAppContent: React.FC = () => {
         setActiveCategoryFilter(null);
       }
       reloadLocalData();
+      setToastMessage('Category deleted 🗑️');
     } catch (error) {
       console.error('Failed to delete category:', error);
       alert('Failed to delete category. Please try again.');
@@ -465,6 +469,14 @@ const MainAppContent: React.FC = () => {
           setEditingCategory(null);
           setIsCategoryModalOpen(true);
         }}
+        onOpenCategoryModal={category => {
+          setEditingCategory(category);
+          setIsCategoryModalOpen(true);
+        }}
+        onOpenDeleteCategoryModal={category => {
+          setDeletingCategory(category);
+          setIsDeleteCategoryModalOpen(true);
+        }}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden relative z-10">
@@ -499,12 +511,23 @@ const MainAppContent: React.FC = () => {
                 onAssignTimeSlot={handleAssignTimeSlot}
                 onRemoveTimeSlot={handleRemoveTimeSlot}
                 onTogglePlanSlotComplete={handleTogglePlanSlotComplete}
-                onOpenTaskModal={task => {
+                onOpenTaskModal={(task, defaultCategoryId) => {
                   setEditingTask(task || null);
+                  if (defaultCategoryId) {
+                    setDefaultCategoryIdForTask(defaultCategoryId);
+                  }
                   setIsTaskModalOpen(true);
                 }}
                 onDeleteTask={handleDeleteTask}
                 onFinishTask={handleFinishTask}
+                onOpenCategoryModal={category => {
+                  setEditingCategory(category || null);
+                  setIsCategoryModalOpen(true);
+                }}
+                onOpenDeleteCategoryModal={category => {
+                  setDeletingCategory(category);
+                  setIsDeleteCategoryModalOpen(true);
+                }}
               />
             )}
 
@@ -514,8 +537,11 @@ const MainAppContent: React.FC = () => {
                 categories={categories}
                 activeCategoryFilter={activeCategoryFilter}
                 onSelectCategoryFilter={setActiveCategoryFilter}
-                onOpenTaskModal={task => {
+                onOpenTaskModal={(task, defaultCategoryId) => {
                   setEditingTask(task || null);
+                  if (defaultCategoryId) {
+                    setDefaultCategoryIdForTask(defaultCategoryId);
+                  }
                   setIsTaskModalOpen(true);
                 }}
                 onDeleteTask={handleDeleteTask}
@@ -606,17 +632,24 @@ const MainAppContent: React.FC = () => {
 
       <TaskModal
         isOpen={isTaskModalOpen}
-        onClose={() => setIsTaskModalOpen(false)}
+        onClose={() => {
+          setIsTaskModalOpen(false);
+          setDefaultCategoryIdForTask(null);
+        }}
         onSave={handleSaveTask}
         categories={categories}
         initialTask={editingTask}
-        defaultCategoryId={activeCategoryFilter || categories[0]?.id}
+        defaultCategoryId={defaultCategoryIdForTask || activeCategoryFilter || categories[0]?.id}
       />
 
       <CategoryModal
         isOpen={isCategoryModalOpen}
         onClose={() => setIsCategoryModalOpen(false)}
         onSave={handleSaveCategory}
+        onDelete={category => {
+          setDeletingCategory(category);
+          setIsDeleteCategoryModalOpen(true);
+        }}
         initialCategory={editingCategory}
       />
 

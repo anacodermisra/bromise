@@ -36,6 +36,8 @@ import {
   Moon,
   Zap,
   Clock,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -52,10 +54,12 @@ interface TodayViewProps {
   onAssignTimeSlot?: (taskId: string, startTime: string, durationMinutes?: number, endTime?: string, planItemId?: string) => void;
   onRemoveTimeSlot?: (planItemIdOrTaskId: string) => void;
   onTogglePlanSlotComplete?: (planItemId: string) => void;
-  onOpenTaskModal: (task?: Task) => void;
+  onOpenTaskModal: (task?: Task, defaultCategoryId?: string) => void;
   onDeleteTask: (taskId: string) => void;
   onFinishTask?: (taskId: string) => void;
   onChangeDate?: (date: string) => void;
+  onOpenCategoryModal?: (category?: Category) => void;
+  onOpenDeleteCategoryModal?: (category: Category) => void;
 }
 
 const TodayDropZoneContainer: React.FC<{ children: React.ReactNode; isMobileHidden: boolean }> = ({
@@ -116,6 +120,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onDeleteTask,
   onFinishTask,
   onChangeDate,
+  onOpenCategoryModal,
+  onOpenDeleteCategoryModal,
 }) => {
   const [scheduleMode, setScheduleMode] = useState<'list' | 'timetable'>('list');
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,33 +153,55 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
   const todayTaskIds = useMemo(() => todayTasks.map(t => t.id), [todayTasks]);
 
-  // Backlog Bucket contains ALL incomplete tasks (and recurring tasks even if completed today)
-  const backlogTasks = tasks.filter(task => {
+  // Active backlog tasks (incomplete or recurring, not archived)
+  const activeBacklogTasks = tasks.filter(task => {
     const isCompletedToday = !!completions[task.id];
     const isArchived = !!task.archivedAt;
-    const taskCat = categories.find(c => c.id === task.categoryId);
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      task.title.toLowerCase().includes(q) ||
-      (task.notes && task.notes.toLowerCase().includes(q)) ||
-      (taskCat && taskCat.name.toLowerCase().includes(q));
-    const matchesCat = selectedCategoryFilter ? task.categoryId === selectedCategoryFilter : true;
-    return (task.isRecurring || !isCompletedToday) && !isArchived && matchesSearch && matchesCat;
+    return (task.isRecurring || !isCompletedToday) && !isArchived;
   });
 
+  const q = searchQuery.toLowerCase().trim();
+
+  // Tasks matching search query
+  const searchMatchedTasks = activeBacklogTasks.filter(task => {
+    if (!q) return true;
+    const taskCat = categories.find(c => c.id === task.categoryId);
+    return (
+      task.title.toLowerCase().includes(q) ||
+      (task.notes && task.notes.toLowerCase().includes(q)) ||
+      (taskCat && taskCat.name.toLowerCase().includes(q))
+    );
+  });
+
+  // Filter tasks by selected category pill (if any)
+  const backlogTasks = searchMatchedTasks.filter(task =>
+    selectedCategoryFilter ? task.categoryId === selectedCategoryFilter : true
+  );
+
+  // Categories to display:
+  // - If category pill is selected: show that category
+  // - If search query is present: show categories that match name OR have matching tasks
+  // - Otherwise (default): show categories that have active backlog tasks
   const backlogByCategory = categories
     .filter(cat => {
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase().trim();
-      const catMatches = cat.name.toLowerCase().includes(q);
-      const hasMatchingTasks = backlogTasks.some(t => t.categoryId === cat.id);
-      return catMatches || hasMatchingTasks;
+      if (selectedCategoryFilter) {
+        return cat.id === selectedCategoryFilter;
+      }
+      if (q) {
+        const catMatches = cat.name.toLowerCase().includes(q);
+        const hasMatchingTasks = searchMatchedTasks.some(t => t.categoryId === cat.id);
+        return catMatches || hasMatchingTasks;
+      }
+      return activeBacklogTasks.some(t => t.categoryId === cat.id);
     })
     .map(cat => ({
       category: cat,
       tasks: backlogTasks.filter(t => t.categoryId === cat.id),
     }));
+
+  const categoryPills = q
+    ? categories.filter(c => c.name.toLowerCase().includes(q))
+    : categories;
 
   const handleToggleCompleteWithConfetti = (taskId: string) => {
     const isCurrentlyCompleted = !!completions[taskId];
@@ -549,13 +577,25 @@ export const TodayView: React.FC<TodayViewProps> = ({
                   {backlogTasks.length}
                 </span>
               </div>
-              <button
-                onClick={() => onOpenTaskModal()}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-xs text-theme-accent font-semibold transition-colors border border-dark-700"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Task</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                {onOpenCategoryModal && (
+                  <button
+                    onClick={() => onOpenCategoryModal()}
+                    className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-dark-850 hover:bg-dark-800 text-xs text-dark-300 hover:text-white font-medium transition-colors border border-dark-750"
+                    title="Add new category"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Category</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => onOpenTaskModal()}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-xs text-theme-accent font-semibold transition-colors border border-dark-700"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Task</span>
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -581,7 +621,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 >
                   All
                 </button>
-                {categories.map(cat => (
+                {categoryPills.map(cat => (
                   <button
                     key={cat.id}
                     onClick={() => setSelectedCategoryFilter(selectedCategoryFilter === cat.id ? null : cat.id)}
@@ -598,65 +638,134 @@ export const TodayView: React.FC<TodayViewProps> = ({
               </div>
             </div>
 
-            {backlogTasks.length === 0 ? (
+            {backlogByCategory.length === 0 ? (
               <div className="bg-dark-900/60 border border-dashed border-dark-800 rounded-2xl p-6 text-center space-y-2">
-                <p className="text-xs text-dark-500">No matching backlog tasks found.</p>
-                <button
-                  onClick={() => onOpenTaskModal()}
-                  className="text-xs text-theme-accent font-semibold hover:underline inline-flex items-center space-x-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create a new task</span>
-                </button>
+                <p className="text-xs text-dark-500">
+                  {searchQuery.trim()
+                    ? `No tasks or categories matching "${searchQuery.trim()}".`
+                    : 'No matching backlog tasks found.'}
+                </p>
+                <div className="flex items-center justify-center space-x-3 pt-1">
+                  <button
+                    onClick={() => onOpenTaskModal()}
+                    className="text-xs text-theme-accent font-semibold hover:underline inline-flex items-center space-x-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create a new task</span>
+                  </button>
+                  {onOpenCategoryModal && (
+                    <button
+                      onClick={() => onOpenCategoryModal()}
+                      className="text-xs text-dark-400 hover:text-white font-semibold inline-flex items-center space-x-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>New category</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-4 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
                 {backlogByCategory.map(group => {
-                  if (group.tasks.length === 0) return null;
                   const isCollapsed = !!collapsedCategories[group.category.id];
 
                   return (
                     <div key={group.category.id} className="space-y-2">
-                      <button
-                        onClick={() => toggleCategoryCollapse(group.category.id)}
-                        className="w-full flex items-center justify-between px-2 py-1 hover:bg-dark-900/60 rounded-lg transition-colors group"
-                      >
-                        <div className="flex items-center space-x-2">
+                      <div className="w-full flex items-center justify-between px-2 py-1 hover:bg-dark-900/60 rounded-xl transition-colors group">
+                        <button
+                          type="button"
+                          onClick={() => toggleCategoryCollapse(group.category.id)}
+                          className="flex items-center space-x-2 text-left flex-1 min-w-0"
+                        >
                           <IconHelper
                             name={group.category.icon}
-                            className="w-4 h-4"
+                            className="w-4 h-4 flex-shrink-0"
                             style={{ color: group.category.accent }}
                           />
-                          <span className="text-xs font-bold text-theme-title uppercase tracking-wider font-sans">
+                          <span className="text-xs font-bold text-theme-title uppercase tracking-wider font-sans truncate">
                             {group.category.name}
                           </span>
-                          <span className="text-[11px] text-dark-500 font-semibold">
+                          <span className="text-[11px] text-dark-500 font-semibold flex-shrink-0">
                             ({group.tasks.length})
                           </span>
+                        </button>
+
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onOpenTaskModal(undefined, group.category.id)}
+                            className="p-1 rounded text-dark-500 hover:text-theme-title hover:bg-dark-800 transition-colors opacity-70 group-hover:opacity-100"
+                            title={`Add task to ${group.category.name}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                          {onOpenCategoryModal && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenCategoryModal(group.category)}
+                              className="p-1 rounded text-dark-500 hover:text-theme-title hover:bg-dark-800 transition-colors opacity-70 group-hover:opacity-100"
+                              title={`Edit ${group.category.name}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
+                          {onOpenDeleteCategoryModal && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenDeleteCategoryModal(group.category)}
+                              className="p-1 rounded text-dark-500 hover:text-rose-400 hover:bg-dark-800 transition-colors opacity-70 group-hover:opacity-100"
+                              title={`Delete ${group.category.name}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleCategoryCollapse(group.category.id)}
+                            className="p-1 rounded text-dark-500 hover:text-theme-title transition-colors ml-0.5"
+                          >
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
                         </div>
-                        {isCollapsed ? (
-                          <ChevronRight className="w-4 h-4 text-dark-500" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-dark-500" />
-                        )}
-                      </button>
+                      </div>
 
                       {!isCollapsed && (
-                        <div className="space-y-2 pl-1">
-                          {group.tasks.map(task => {
-                            const isScheduledToday = todayTaskIds.includes(task.id);
-                            return (
-                              <BacklogTaskItem
-                                key={task.id}
-                                task={task}
-                                category={group.category}
-                                isScheduledToday={isScheduledToday}
-                                onAddToToday={onAddToToday}
-                                onEditTask={onOpenTaskModal}
-                                onDeleteTask={onDeleteTask}
-                              />
-                            );
-                          })}
+                        <div className="pl-1">
+                          {group.tasks.length > 0 ? (
+                            <div className="space-y-2">
+                              {group.tasks.map(task => {
+                                const isScheduledToday = todayTaskIds.includes(task.id);
+                                return (
+                                  <BacklogTaskItem
+                                    key={task.id}
+                                    task={task}
+                                    category={group.category}
+                                    isScheduledToday={isScheduledToday}
+                                    onAddToToday={onAddToToday}
+                                    onEditTask={onOpenTaskModal}
+                                    onDeleteTask={onDeleteTask}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-xl bg-dark-900/40 border border-dashed border-dark-800 text-xs flex items-center justify-between">
+                              <span className="text-dark-500">
+                                No active tasks in {group.category.name}
+                              </span>
+                              <button
+                                onClick={() => onOpenTaskModal(undefined, group.category.id)}
+                                className="text-theme-accent hover:underline font-semibold flex items-center space-x-1"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Task</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

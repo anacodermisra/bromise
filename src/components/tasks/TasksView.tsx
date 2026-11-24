@@ -9,7 +9,7 @@ interface TasksViewProps {
   categories: Category[];
   activeCategoryFilter: string | null;
   onSelectCategoryFilter: (catId: string | null) => void;
-  onOpenTaskModal: (task?: Task) => void;
+  onOpenTaskModal: (task?: Task, defaultCategoryId?: string) => void;
   onDeleteTask: (taskId: string) => void;
   onOpenCategoryModal: (category?: Category) => void;
   onOpenDeleteCategoryModal: (category: Category) => void;
@@ -52,9 +52,27 @@ export const TasksView: React.FC<TasksViewProps> = ({
     return matchesCat && matchesSearch && matchesPriority && matchesRecurring && matchesDeadline && matchesArchived;
   });
 
-  const filteredCategories = categories.filter(c =>
-    c.name.toLowerCase().includes(categorySearchQuery.toLowerCase())
-  );
+  const filteredCategories = categories.filter(c => {
+    const qCat = categorySearchQuery.toLowerCase().trim();
+    if (qCat) return c.name.toLowerCase().includes(qCat);
+    const qTask = searchQuery.toLowerCase().trim();
+    if (qTask) {
+      return (
+        c.name.toLowerCase().includes(qTask) ||
+        tasks.some(
+          t =>
+            t.categoryId === c.id &&
+            (t.title.toLowerCase().includes(qTask) ||
+              (t.notes && t.notes.toLowerCase().includes(qTask)))
+        )
+      );
+    }
+    return true;
+  });
+
+  const activeCategory = activeCategoryFilter
+    ? categories.find(c => c.id === activeCategoryFilter)
+    : null;
 
   const priorityColors = {
     low: 'bg-dark-800 text-dark-500 border-dark-750',
@@ -130,37 +148,38 @@ export const TasksView: React.FC<TasksViewProps> = ({
                   >
                     <IconHelper name={cat.icon} className="w-4 h-4" style={{ color: cat.accent }} />
                   </div>
-                  <div className="opacity-0 group-hover:opacity-100 flex items-center space-x-1 transition-opacity">
+                  <div className="flex items-center space-x-1 opacity-70 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={e => {
                         e.stopPropagation();
                         onOpenCategoryModal(cat);
                       }}
-                      className="p-1 rounded text-dark-500 hover:text-theme-title hover:bg-dark-750"
+                      className="p-1.5 rounded-lg text-dark-400 hover:text-white hover:bg-dark-750 transition-colors"
                       title="Edit Category"
                     >
-                      <Pencil className="w-3 h-3" />
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={e => {
                         e.stopPropagation();
                         onOpenDeleteCategoryModal(cat);
                       }}
-                      className="p-1 rounded text-dark-500 hover:text-rose-400 hover:bg-dark-750"
+                      className="p-1.5 rounded-lg text-dark-400 hover:text-rose-400 hover:bg-dark-750 transition-colors"
                       title="Delete Category"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="text-sm font-bold truncate">{cat.name}</div>
+                <div className="text-sm font-bold truncate flex items-center justify-between">
+                  <span>{cat.name}</span>
+                  <div
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: cat.accent }}
+                  />
+                </div>
                 <div className="text-xs text-dark-500 mt-1">{catTasksCount} tasks</div>
-
-                <div
-                  className="absolute top-2 right-2 w-2 h-2 rounded-full"
-                  style={{ backgroundColor: cat.accent }}
-                />
               </div>
             );
           })}
@@ -170,14 +189,36 @@ export const TasksView: React.FC<TasksViewProps> = ({
       <div className="space-y-4 pt-4 border-t border-dark-800">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h3 className="text-xl font-bold text-theme-title font-sans">
-              Task Directory {activeCategoryFilter ? `(${categories.find(c => c.id === activeCategoryFilter)?.name})` : ''}
-            </h3>
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              <h3 className="text-xl font-bold text-theme-title font-sans">
+                Task Directory {activeCategory ? `(${activeCategory.name})` : ''}
+              </h3>
+              {activeCategory && (
+                <div className="flex items-center space-x-1.5 ml-2">
+                  <button
+                    onClick={() => onOpenCategoryModal(activeCategory)}
+                    className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-850 hover:bg-dark-800 text-xs font-semibold text-dark-300 hover:text-white border border-dark-800 transition-colors"
+                    title={`Edit ${activeCategory.name}`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => onOpenDeleteCategoryModal(activeCategory)}
+                    className="flex items-center space-x-1 px-2 py-1 rounded-lg bg-dark-850 hover:bg-dark-800 text-xs font-semibold text-rose-400 hover:text-rose-300 border border-dark-800 transition-colors"
+                    title={`Delete ${activeCategory.name}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <p className="text-xs text-dark-500">Showing {filteredTasks.length} tasks</p>
           </div>
 
           <button
-            onClick={() => onOpenTaskModal()}
+            onClick={() => onOpenTaskModal(undefined, activeCategoryFilter || undefined)}
             className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-gradient-to-r from-theme-accent to-theme-accent-secondary hover:from-theme-accent/90 hover:to-theme-accent-secondary/90 text-white text-xs font-semibold shadow-glow-accent transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -255,13 +296,27 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
         {filteredTasks.length === 0 ? (
           <div className="bg-dark-900/60 border border-dashed border-dark-800 rounded-2xl p-12 text-center space-y-3">
-            <p className="text-sm font-semibold text-theme-title">No tasks match your filter criteria.</p>
-            <button
-              onClick={() => onOpenTaskModal()}
-              className="px-4 py-2 rounded-xl bg-theme-accent text-white text-xs font-semibold shadow-glow-accent"
-            >
-              Add a new task
-            </button>
+            <p className="text-sm font-semibold text-theme-title">
+              {activeCategory
+                ? `No tasks found in "${activeCategory.name}".`
+                : 'No tasks match your filter criteria.'}
+            </p>
+            <div className="flex items-center justify-center space-x-3 pt-1">
+              <button
+                onClick={() => onOpenTaskModal(undefined, activeCategoryFilter || undefined)}
+                className="px-4 py-2 rounded-xl bg-theme-accent text-white text-xs font-semibold shadow-glow-accent"
+              >
+                {activeCategory ? `Add task to ${activeCategory.name}` : 'Add a new task'}
+              </button>
+              {activeCategory && (
+                <button
+                  onClick={() => onOpenDeleteCategoryModal(activeCategory)}
+                  className="px-4 py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-rose-400 text-xs font-semibold border border-dark-700 transition-colors"
+                >
+                  Delete Category
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-2.5">

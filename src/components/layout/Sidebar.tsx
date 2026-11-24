@@ -17,6 +17,8 @@ import {
   Monitor,
   Smartphone,
   ExternalLink,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,6 +32,8 @@ interface SidebarProps {
   activeCategoryId?: string | null;
   onSelectCategoryFilter?: (catId: string | null) => void;
   onOpenNewCategoryModal: () => void;
+  onOpenCategoryModal?: (category: Category) => void;
+  onOpenDeleteCategoryModal?: (category: Category) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -39,6 +43,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeCategoryId,
   onSelectCategoryFilter,
   onOpenNewCategoryModal,
+  onOpenCategoryModal,
+  onOpenDeleteCategoryModal,
 }) => {
   const { canInstall, isInstalled, isIOS, promptInstall } = usePWAInstall();
   const { user, logout } = useAuth();
@@ -223,23 +229,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {categories.map(cat => {
               const isSelected = activeCategoryId === cat.id && currentView === 'tasks';
               return (
-                <button
+                <div
                   key={cat.id}
                   onClick={() => {
                     onSelectView('tasks');
                     if (onSelectCategoryFilter) onSelectCategoryFilter(cat.id);
                   }}
-                  className={`w-full flex items-center space-x-3 px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
+                  className={`group w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all ${
                     isSelected ? 'text-theme-title bg-dark-800 border border-dark-700' : 'text-dark-500 hover:text-theme-title hover:bg-dark-850'
                   }`}
                 >
-                  <IconHelper name={cat.icon} className="w-3.5 h-3.5" style={{ color: cat.accent }} />
-                  <span className="truncate flex-1 text-left">{cat.name}</span>
-                  <div
-                    className="w-1.5 h-1.5 rounded-full opacity-80"
-                    style={{ backgroundColor: cat.accent }}
-                  />
-                </button>
+                  <div className="flex items-center space-x-2.5 truncate min-w-0 flex-1">
+                    <IconHelper name={cat.icon} className="w-3.5 h-3.5 flex-shrink-0" style={{ color: cat.accent }} />
+                    <span className="truncate">{cat.name}</span>
+                  </div>
+
+                  <div className="flex items-center space-x-1">
+                    {onOpenCategoryModal && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          onOpenCategoryModal(cat);
+                        }}
+                        className="p-1 rounded text-dark-500 hover:text-white hover:bg-dark-750 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Edit Category"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {onOpenDeleteCategoryModal && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          onOpenDeleteCategoryModal(cat);
+                        }}
+                        className="p-1 rounded text-dark-500 hover:text-rose-400 hover:bg-dark-750 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Delete Category"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    <div
+                      className="w-1.5 h-1.5 rounded-full opacity-80 flex-shrink-0 ml-1"
+                      style={{ backgroundColor: cat.accent }}
+                    />
+                  </div>
+                </div>
               );
             })}
           </div>

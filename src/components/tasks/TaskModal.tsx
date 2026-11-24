@@ -167,7 +167,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Category */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-dark-300 uppercase tracking-wider">Category</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 overflow-y-auto pr-1">
               {categories.map(cat => (
                 <button
                   type="button"

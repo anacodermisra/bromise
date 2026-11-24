@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { Category } from '../../types';
 import { AVAILABLE_ICONS, IconHelper } from '../common/IconHelper';
-import { X } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 
 interface CategoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (category: Omit<Category, 'id' | 'createdAt' | 'position'> | Partial<Category>, id?: string) => void;
+  onDelete?: (category: Category) => void;
   initialCategory?: Category | null;
 }
 
@@ -25,6 +26,7 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   initialCategory,
 }) => {
   const [name, setName] = useState('');
@@ -132,20 +134,37 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({
             </div>
           </div>
 
-          <div className="pt-2 flex items-center justify-end space-x-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-dark-850 hover:bg-dark-800 text-xs font-semibold text-dark-400 hover:text-theme-title transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-theme-accent to-theme-accent-secondary hover:from-theme-accent/90 hover:to-theme-accent-secondary/90 text-white text-xs font-bold shadow-glow-accent transition-all"
-            >
-              {initialCategory ? 'Save Category' : 'Create Category'}
-            </button>
+          <div className="pt-2 flex items-center justify-between">
+            {initialCategory && onDelete ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const cat = initialCategory;
+                  onClose();
+                  onDelete(cat);
+                }}
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                title="Delete this category"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            ) : <div />}
+            <div className="flex items-center space-x-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl bg-dark-850 hover:bg-dark-800 text-xs font-semibold text-dark-400 hover:text-theme-title transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-theme-accent to-theme-accent-secondary hover:from-theme-accent/90 hover:to-theme-accent-secondary/90 text-white text-xs font-bold shadow-glow-accent transition-all"
+              >
+                {initialCategory ? 'Save Changes' : 'Create Category'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

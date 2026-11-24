@@ -113,13 +113,21 @@ export function deleteCategory(id: string, action: 'move' | 'delete', targetCate
 
   let tasks = getTasks();
   if (action === 'delete') {
+    const deletedTaskIds = new Set(tasks.filter(task => task.categoryId === id).map(t => t.id));
     tasks = tasks.filter(task => task.categoryId !== id);
+    saveTasks(tasks);
+    if (deletedTaskIds.size > 0) {
+      const plans = getDailyPlans().filter(p => !deletedTaskIds.has(p.taskId));
+      saveDailyPlans(plans);
+      const comps = getCompletions().filter(c => !deletedTaskIds.has(c.taskId));
+      saveCompletions(comps);
+    }
   } else if (action === 'move' && targetCategoryId) {
     tasks = tasks.map(task =>
       task.categoryId === id ? { ...task, categoryId: targetCategoryId } : task
     );
+    saveTasks(tasks);
   }
-  saveTasks(tasks);
 }
 
 // ─────────────────────────────────────────────────────────────

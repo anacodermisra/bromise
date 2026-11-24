@@ -197,35 +197,40 @@ app.put('/api/categories/:id', requireAuth, async (req, res) => {
 });
 
 app.delete('/api/categories/:id', requireAuth, async (req, res) => {
-  const { id } = req.params;
-  const { action, targetCategoryId } = req.body;
-  const checkResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
-  if (!checkResult.rows[0]) {
-    return res.status(404).json({ error: 'not found' });
-  }
-  if (action === 'move' && targetCategoryId) {
-    await db.execute({ sql: 'UPDATE tasks SET category_id=?, updated_at=? WHERE category_id=? AND user_id=?', args: [targetCategoryId, nowISO(), id, req.userId] });
-  } else {
-    // delete tasks in this category
-    const tasksResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
-    const taskIds = tasksResult.rows.map(r => r.id);
-    for (const tid of taskIds) {
-      await db.execute({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
-      await db.execute({ sql: 'DELETE FROM completions WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
-      await db.execute({ sql: 'DELETE FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [tid, req.userId] });
+  try {
+    const { id } = req.params;
+    const { action = 'delete', targetCategoryId } = req.body || {};
+    const checkResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+    if (!checkResult.rows[0]) {
+      return res.status(404).json({ error: 'not found' });
     }
-    await db.execute({ sql: 'DELETE FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
+
+    const statements = [];
+
+    if (action === 'move' && targetCategoryId) {
+      statements.push({
+        sql: 'UPDATE tasks SET category_id=?, updated_at=? WHERE category_id=? AND user_id=?',
+        args: [targetCategoryId, nowISO(), id, req.userId]
+      });
+    } else {
+      // delete associated daily plans, completions, and tasks in this category
+      const tasksResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
+      for (const t of tasksResult.rows) {
+        statements.push({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
+        statements.push({ sql: 'DELETE FROM completions WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
+        statements.push({ sql: 'DELETE FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
+      }
+      statements.push({ sql: 'DELETE FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
+    }
+
+    statements.push({ sql: 'DELETE FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+
+    await db.batch(statements, 'write');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to delete category:', err);
+    res.status(500).json({ error: 'Failed to delete category' });
   }
-  const now = nowISO();
-  // Re-index positions
-  const remainingResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id != ? AND user_id=? ORDER BY position ASC', args: [id, req.userId] });
-  const remaining = remainingResult.rows;
-  for (let i = 0; i < remaining.length; i++) {
-    const r = remaining[i];
-    await db.execute({ sql: 'UPDATE categories SET position=?,updated_at=? WHERE id=? AND user_id=?', args: [i, now, r.id, req.userId] });
-  }
-  await db.execute({ sql: 'DELETE FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
-  res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────

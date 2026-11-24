@@ -24,15 +24,19 @@ export const CategoryDeleteModal: React.FC<CategoryDeleteModalProps> = ({
 
   if (!isOpen || !category) return null;
 
-  const categoryTasks = tasks.filter(t => t.categoryId === category.id);
+  const categoryTasks = tasks.filter(t => t.categoryId === category.id && !t.archivedAt);
   const remainingCategories = categories.filter(c => c.id !== category.id);
 
   const handleConfirm = () => {
-    onConfirmDelete(
-      category.id,
-      action,
-      action === 'move' ? targetCategoryId || remainingCategories[0]?.id : undefined
-    );
+    if (categoryTasks.length === 0) {
+      onConfirmDelete(category.id, 'delete');
+    } else {
+      onConfirmDelete(
+        category.id,
+        action,
+        action === 'move' ? (targetCategoryId || remainingCategories[0]?.id) : undefined
+      );
+    }
     onClose();
   };
 
@@ -46,7 +50,7 @@ export const CategoryDeleteModal: React.FC<CategoryDeleteModalProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white font-sans">Delete Category</h3>
-              <p className="text-xs text-dark-500">Confirm deletion options for "{category.name}"</p>
+              <p className="text-xs text-dark-500">Confirm deletion for "{category.name}"</p>
             </div>
           </div>
           <button
@@ -58,74 +62,87 @@ export const CategoryDeleteModal: React.FC<CategoryDeleteModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5">
-          <p className="text-xs text-dark-400">
-            This category currently contains <strong className="text-white">{categoryTasks.length} tasks</strong>. What would you like to do with these tasks?
-          </p>
-
-          {categoryTasks.length > 0 && remainingCategories.length > 0 && (
-            <div className="space-y-3">
-              <label
-                onClick={() => setAction('move')}
-                className={`flex items-start space-x-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                  action === 'move'
-                    ? 'bg-dark-850 border-violet-500 text-white'
-                    : 'bg-dark-950 border-dark-800 text-dark-400 hover:border-dark-700'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="deleteAction"
-                  checked={action === 'move'}
-                  onChange={() => setAction('move')}
-                  className="mt-0.5 text-violet-600 focus:ring-violet-500"
-                />
-                <div className="flex-1 text-xs">
-                  <div className="font-bold text-white flex items-center space-x-1">
-                    <ArrowRight className="w-3.5 h-3.5 text-violet-400" />
-                    <span>Move tasks to another category</span>
-                  </div>
-                  {action === 'move' && (
-                    <select
-                      value={targetCategoryId || remainingCategories[0]?.id}
-                      onChange={e => setTargetCategoryId(e.target.value)}
-                      className="mt-2 w-full bg-dark-950 border border-dark-750 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500"
-                    >
-                      {remainingCategories.map(cat => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </label>
-
-              <label
-                onClick={() => setAction('delete')}
-                className={`flex items-start space-x-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                  action === 'delete'
-                    ? 'bg-rose-500/10 border-rose-500 text-rose-300'
-                    : 'bg-dark-950 border-dark-800 text-dark-400 hover:border-dark-700'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="deleteAction"
-                  checked={action === 'delete'}
-                  onChange={() => setAction('delete')}
-                  className="mt-0.5 text-rose-600 focus:ring-rose-500"
-                />
-                <div className="flex-1 text-xs">
-                  <div className="font-bold text-rose-400 flex items-center space-x-1">
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Permanently delete all {categoryTasks.length} tasks</span>
-                  </div>
-                  <div className="text-[11px] text-dark-500 mt-0.5">
-                    This action will remove these tasks from the backlog and today's plan.
-                  </div>
-                </div>
-              </label>
+          {categoryTasks.length === 0 ? (
+            <div className="p-4 rounded-2xl bg-dark-950 border border-dark-800 space-y-2 text-xs">
+              <p className="text-theme-title font-semibold">
+                Are you sure you want to delete <span className="text-rose-400 font-bold">"{category.name}"</span>?
+              </p>
+              <p className="text-dark-400">
+                This category currently has <strong className="text-white">0 tasks</strong>. Removing it is completely safe and won't affect any tasks.
+              </p>
             </div>
+          ) : (
+            <>
+              <p className="text-xs text-dark-400">
+                This category currently contains <strong className="text-white">{categoryTasks.length} active tasks</strong>. What would you like to do with these tasks?
+              </p>
+
+              {remainingCategories.length > 0 && (
+                <div className="space-y-3">
+                  <label
+                    onClick={() => setAction('move')}
+                    className={`flex items-start space-x-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      action === 'move'
+                        ? 'bg-dark-850 border-theme-accent text-white'
+                        : 'bg-dark-950 border-dark-800 text-dark-400 hover:border-dark-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteAction"
+                      checked={action === 'move'}
+                      onChange={() => setAction('move')}
+                      className="mt-0.5 text-theme-accent focus:ring-theme-accent"
+                    />
+                    <div className="flex-1 text-xs">
+                      <div className="font-bold text-white flex items-center space-x-1">
+                        <ArrowRight className="w-3.5 h-3.5 text-theme-accent" />
+                        <span>Move tasks to another category</span>
+                      </div>
+                      {action === 'move' && (
+                        <select
+                          value={targetCategoryId || remainingCategories[0]?.id}
+                          onChange={e => setTargetCategoryId(e.target.value)}
+                          className="mt-2 w-full bg-dark-950 border border-dark-750 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-theme-accent"
+                        >
+                          {remainingCategories.map(cat => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </label>
+
+                  <label
+                    onClick={() => setAction('delete')}
+                    className={`flex items-start space-x-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      action === 'delete'
+                        ? 'bg-rose-500/10 border-rose-500 text-rose-300'
+                        : 'bg-dark-950 border-dark-800 text-dark-400 hover:border-dark-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteAction"
+                      checked={action === 'delete'}
+                      onChange={() => setAction('delete')}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                    />
+                    <div className="flex-1 text-xs">
+                      <div className="font-bold text-rose-400 flex items-center space-x-1">
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Permanently delete all {categoryTasks.length} tasks</span>
+                      </div>
+                      <div className="text-[11px] text-dark-500 mt-0.5">
+                        This action will remove these tasks from backlog, schedule, and history.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </>
           )}
 
           <div className="pt-2 flex items-center justify-end space-x-3">
@@ -139,7 +156,7 @@ export const CategoryDeleteModal: React.FC<CategoryDeleteModalProps> = ({
               onClick={handleConfirm}
               className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg transition-all"
             >
-              Confirm Delete
+              {categoryTasks.length === 0 ? 'Delete Category' : 'Confirm Delete'}
             </button>
           </div>
         </div>
