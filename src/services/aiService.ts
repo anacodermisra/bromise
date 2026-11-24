@@ -897,10 +897,22 @@ async function callGeminiLLM(
 
   const todayStr = formatDateKey(new Date());
   const categoryNames = categories.map(c => c.name);
-  const activeTasks = getTasks().filter(t => !t.archivedAt);
-  const taskSummaries = activeTasks
+  
+  // Get tasks actually scheduled for the selected date via daily plans
+  const allPlans = getDailyPlans();
+  const todayPlans = allPlans.filter(p => p.date === selectedDate);
+  const todayTaskIds = todayPlans.map(p => p.taskId);
+  const todayTasks = getTasks().filter(t => todayTaskIds.includes(t.id) && !t.archivedAt);
+  
+  const taskSummaries = todayTasks
     .slice(0, 20)
     .map(t => `"${t.title}" (Done: ${isTaskCompletedOnDate(t.id, selectedDate)})`)
+    .join(', ');
+  
+  const activeTasks = getTasks().filter(t => !t.archivedAt);
+  const activeTaskSummaries = activeTasks
+    .slice(0, 10)
+    .map(t => `"${t.title}"`)
     .join(', ');
 
   const systemInstructions = `You are Bro Bot, a helpful task assistant for BROMISE ("Do it for your younger self").
@@ -909,8 +921,9 @@ You understand natural language and help users manage their tasks.
 Current App State:
 - Today's Date: ${todayStr}
 - Currently Selected Planner Date: ${selectedDate}
-- Existing Categories: ${categoryNames.join(', ')}
-- Current Active Tasks: ${taskSummaries || 'None yet'}
+- Tasks Scheduled for ${selectedDate}: ${taskSummaries || 'None yet'}
+- All Active Tasks (backlog): ${activeTaskSummaries || 'None yet'}
+- Categories: ${categoryNames.join(', ')}
 
 RULES:
 1. Answer the user's question directly and clearly. Do not give unsolicited motivational speeches.
