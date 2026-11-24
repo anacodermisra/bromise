@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bromise-v1.3';
+const CACHE_NAME = 'bromise-v1.3.1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
