@@ -145,24 +145,6 @@ export interface WallpaperConfig {
   };
 }
 
-export interface AIMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: string;
-  actionsExecuted?: string[];
-}
-
-export interface AIConfig {
-  enabled?: boolean;
-  provider: 'gemini' | 'ollama' | 'lmstudio' | 'offline';
-  endpointUrl: string;
-  model: string;
-  apiKey?: string;
-  geminiModel?: string;
-  autoExecuteActions?: boolean;
-}
-
 export interface DayStats {
   date: string;
   plannedCount: number;

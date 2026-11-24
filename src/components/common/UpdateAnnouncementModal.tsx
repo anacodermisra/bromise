@@ -2,8 +2,7 @@ import React, { useEffect } from 'react';
 import {
   X,
   Snowflake,
-  Clock,
-  Layers,
+  Image as ImageIcon,
   Sparkles,
   ArrowRight,
   ShieldCheck,
@@ -74,14 +73,14 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
           {/* Overlay Title & Badges */}
           <div className="absolute bottom-3 left-4 right-4 space-y-1">
             <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 text-[10px] sm:text-xs font-mono font-bold uppercase tracking-wider backdrop-blur-md">
-              <Snowflake className="w-3 h-3 text-cyan-300 animate-pulse" />
-              <span>Winter Arc • v1.2</span>
+              <ImageIcon className="w-3 h-3 text-cyan-300" />
+              <span>Wallpaper Edition • v1.3</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-wide font-sans drop-shadow-md">
-              BROMISE 1.2 UPDATE
+              BROMISE 1.3 UPDATE
             </h2>
             <p className="text-xs text-cyan-200/90 font-medium drop-shadow">
-              Ruthless discipline, precision timetable & atmospheric power.
+              Your wallpaper, your focus — and a task name that stays put.
             </p>
           </div>
         </div>
@@ -90,7 +89,7 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-xs sm:text-sm text-slate-200 scrollbar-thin scrollbar-thumb-dark-700">
           <div className="p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/20 text-cyan-100 text-xs leading-relaxed">
             <p>
-              Welcome to the <strong>Winter Arc</strong>. Designed for daily execution and locked-in focus, version 1.2 introduces calendar-accurate timetable scheduling, multi-slot repeat sessions, and atmospheric visual effects.
+              Version 1.3 puts you in control of the backdrop. Add a custom image by link or upload, then fine-tune dimming and blur. We also fixed the new-task title resetting during background refreshes.
             </p>
           </div>
 
@@ -100,47 +99,36 @@ export const UpdateAnnouncementModal: React.FC<UpdateAnnouncementModalProps> = (
               <span>What's New in This Release</span>
             </h3>
 
-            {/* Feature 1: Google Calendar Style Timetable */}
+            {/* Feature 1: Custom Wallpaper */}
             <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
               <div className="flex items-center space-x-2 text-cyan-300 font-bold text-xs">
-                <Clock className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                <span>Google Calendar Proportional Timetable</span>
+                <ImageIcon className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                <span>Custom Wallpaper (Link or Upload)</span>
               </div>
               <p className="text-slate-300 text-xs leading-relaxed">
-                Visual hourly breakdown with blocks scaled proportionally to task length (15m, 30m, 1h, 2h+). Drag tasks directly into any hour, use quick <strong>+15m / -15m</strong> buttons, or switch zoom presets (Full 24h, Morning, Afternoon, Evening).
+                Paste an image URL or upload a file in Settings. Your image applies across general views while the Gym and Study Rooms keep their dedicated backdrops.
               </p>
             </div>
 
-            {/* Feature 2: Multi-Slot Repeat Tasks */}
+            {/* Feature 2: Task Name Fix */}
             <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
               <div className="flex items-center space-x-2 text-purple-300 font-bold text-xs">
-                <Layers className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                <span>Multi-Slot Daily Scheduling</span>
+                <CheckCircle2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                <span>New-Task Titles Stay Intact</span>
               </div>
               <p className="text-slate-300 text-xs leading-relaxed">
-                Schedule multiple slots throughout the day for the same activity (e.g. Morning & Evening Deep Work). Multi-slot tasks appear once in your Today list with clean slot count badges.
+                Background sync and date checks no longer clear the title you are typing. Open the form, write the task, and save without losing your place.
               </p>
             </div>
 
-            {/* Feature 3: Winter Arc Theme & Dynamic Snow */}
-            <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
-              <div className="flex items-center space-x-2 text-blue-300 font-bold text-xs">
-                <Snowflake className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                <span>Winter Arc Theme & Atmospheric Snow</span>
-              </div>
-              <p className="text-slate-300 text-xs leading-relaxed">
-                Obsidian and icy frost aesthetic with the samurai mountain backdrop. Dynamic falling snow particles drift randomly across the screen, with independent toggles in Settings.
-              </p>
-            </div>
-
-            {/* Feature 4: Usability & Performance Fixes */}
+            {/* Feature 3: Cleaner Preferences */}
             <div className="p-3.5 rounded-2xl bg-dark-900/90 border border-dark-800 space-y-1.5 hover:border-cyan-500/30 transition-all">
               <div className="flex items-center space-x-2 text-emerald-300 font-bold text-xs">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                <span>Enhanced Contrast & Crash Resilience</span>
+                <span>Streamlined Preferences</span>
               </div>
               <p className="text-slate-300 text-xs leading-relaxed">
-                Solid high-contrast cards (`rgba(15, 23, 42, 0.95)`), zero-occlusion z-index layering, seamless single-page scrolling with no header overlap, and integrated React Error Boundaries.
+                Unused configuration panels are gone. Wallpaper controls, themes, database tools, and backups are easier to reach.
               </p>
             </div>
           </div>

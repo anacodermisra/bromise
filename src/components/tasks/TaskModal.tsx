@@ -28,6 +28,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [isRecurring, setIsRecurring] = useState(false);
 
   useEffect(() => {
+    if (!isOpen) return;
+
     if (initialTask) {
       setTitle(initialTask.title);
       setNotes(initialTask.notes || '');
@@ -43,7 +45,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setDeadline('');
       setIsRecurring(false);
     }
-  }, [initialTask, defaultCategoryId, categories, isOpen]);
+    // Initialize only when the modal opens or the target task changes.
+    // Background category refreshes must never wipe an in-progress title.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTask, isOpen]);
 
   if (!isOpen) return null;
 

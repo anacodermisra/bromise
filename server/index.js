@@ -31,8 +31,8 @@ app.use((_req, res, next) => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "frame-src 'self' https://accounts.google.com; " +
-    "connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 http://localhost:1234 http://127.0.0.1:1234 https://accounts.google.com https://*.turso.io https://*.onrender.com https:; " +
-    "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.googleusercontent.com https:;"
+    "connect-src 'self' https://accounts.google.com https://*.turso.io https://*.onrender.com https:; " +
+    "img-src 'self' data: blob: http: https:;"
   );
   next();
 });

@@ -421,26 +421,19 @@
     - Team progress dashboard
     - Workspaces for personal vs. work tasks
 
-15. **AI-Powered Features**
-    - Smart task prioritization suggestions
-    - Predict task completion time based on history
-    - Auto-categorize tasks from title
-    - Daily plan optimization (reorder based on energy levels)
-
-16. **Integrations**
+15. **Integrations**
     - Google Calendar sync
     - GitHub issues import
     - Jira/Asana/Todoist import
     - Email → Task (forward email to create task)
-    - Slack bot for quick add
 
-17. **Advanced Customization**
+16. **Advanced Customization**
     - Custom fields for tasks
     - Custom views and filters
     - API for third-party integrations
     - Plugin system for community extensions
 
-18. **Gamification**
+17. **Gamification**
     - XP points for completed tasks
     - Badges and achievements
     - Leaderboard (opt-in, anonymous)

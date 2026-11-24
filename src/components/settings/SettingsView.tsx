@@ -18,14 +18,9 @@ import type { ThemeId } from '../../utils/theme';
 import {
   getStoredWallpaperConfig,
   saveWallpaperConfig,
+  normalizeCustomWallpaperUrl,
 } from '../../utils/wallpaper';
-import {
-  getStoredAIConfig,
-  saveStoredAIConfig,
-  testLocalAIConnection,
-  getActiveAIModelInfo,
-} from '../../services/aiService';
-import type { WallpaperConfig, AIConfig } from '../../types';
+import type { WallpaperConfig } from '../../types';
 import {
   Download,
   Upload,
@@ -39,12 +34,10 @@ import {
   User as UserIcon,
   Snowflake,
   Trash2,
-  RefreshCw,
   Info,
-  Key,
-  ExternalLink,
-  Bot,
   SlidersHorizontal,
+  Image as ImageIcon,
+  Link2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_VERSION, APP_RELEASE_NAME } from '../../config/version';
@@ -67,18 +60,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [winterWallpaper, setWinterWallpaper] = useState(isWinterArcWallpaperEnabled());
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
-  // Atmosphere dimming settings
+  // Atmosphere and wallpaper settings
   const [wallpaperConfig, setWallpaperConfig] = useState<WallpaperConfig>(getStoredWallpaperConfig());
-
-  // Bro Bot assistant settings state
-  const [aiConfig, setAiConfig] = useState<AIConfig>(getStoredAIConfig());
-  const [aiTesting, setAiTesting] = useState(false);
-  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [customWallpaperUrl, setCustomWallpaperUrl] = useState(wallpaperConfig.customUrl || '');
+  const [wallpaperStatus, setWallpaperStatus] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Purge sample tasks feedback
   const [purgeStatus, setPurgeStatus] = useState<string | null>(null);
-
-  const modelInfo = getActiveAIModelInfo(aiConfig);
 
   const handleSelectTheme = (themeId: ThemeId) => {
     setCurrentTheme(themeId);
@@ -105,28 +93,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
   };
 
-  const handleUpdateAI = (partial: Partial<AIConfig>) => {
-    setAiConfig(prev => {
-      const updated = { ...prev, ...partial };
-      saveStoredAIConfig(updated);
-      return updated;
-    });
+  const showWallpaperStatus = (ok: boolean, message: string) => {
+    setWallpaperStatus({ ok, message });
+    setTimeout(() => setWallpaperStatus(null), 4000);
   };
 
-  const handleTestAI = async () => {
-    setAiTesting(true);
-    setAiTestResult(null);
-    try {
-      const res = await testLocalAIConnection(aiConfig);
-      setAiTestResult(res);
-      if (res.ok) {
-        saveStoredAIConfig(aiConfig);
-      }
-    } catch (e: any) {
-      setAiTestResult({ ok: false, message: e.message });
-    } finally {
-      setAiTesting(false);
+  const applyCustomWallpaper = (raw: string, message: string) => {
+    const normalized = normalizeCustomWallpaperUrl(raw);
+    if (!normalized) {
+      showWallpaperStatus(false, 'Enter a valid image link (http, https, or this site) or upload an image.');
+      return;
     }
+    setCustomWallpaperUrl(normalized);
+    handleUpdateWallpaper({ enabled: true, type: 'custom', customUrl: normalized });
+    showWallpaperStatus(true, message);
+  };
+
+  const handleCustomWallpaperFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showWallpaperStatus(false, 'Choose an image file to use as wallpaper.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showWallpaperStatus(false, 'Image is too large. Choose a file under 2 MB.');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      applyCustomWallpaper(dataUrl, 'Custom wallpaper uploaded and applied.');
+    };
+    reader.onerror = () => showWallpaperStatus(false, 'Could not read that image file.');
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleUseDefaultWallpaper = () => {
+    handleUpdateWallpaper({ type: 'preset', enabled: true });
+    showWallpaperStatus(true, 'Default wallpaper restored.');
   };
 
   const handlePurgeSampleTasks = () => {
@@ -192,7 +202,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div>
         <h2 className="text-2xl font-black text-theme-title font-sans">Settings & Preferences</h2>
         <p className="text-xs text-dark-400 mt-1">
-          Customize themes, Winter mood atmosphere, Bro Bot intelligence, and manage your data.
+          Customize themes, wallpapers, Winter mood atmosphere, and manage your data.
         </p>
       </div>
 
@@ -343,6 +353,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
+        {/* Custom Wallpaper */}
+        <div className="p-4 rounded-2xl bg-dark-950 border border-dark-800 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-bold text-theme-title flex items-center space-x-1.5">
+              <ImageIcon className="w-3.5 h-3.5 text-theme-accent" />
+              <span>Custom Wallpaper</span>
+            </span>
+            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+              wallpaperConfig.type === 'custom' && wallpaperConfig.customUrl
+                ? 'bg-theme-accent/15 text-theme-accent border-theme-accent/30'
+                : 'bg-dark-900 text-dark-500 border-dark-700'
+            }`}>
+              {wallpaperConfig.type === 'custom' && wallpaperConfig.customUrl ? 'CUSTOM ACTIVE' : 'DEFAULT ACTIVE'}
+            </span>
+          </div>
+          <p className="text-[11px] text-dark-400">
+            Paste an image link or upload an image for the main views. Gym and Study Rooms keep their dedicated backdrops.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Link2 className="w-3.5 h-3.5 text-dark-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={customWallpaperUrl}
+                onChange={e => setCustomWallpaperUrl(e.target.value)}
+                placeholder="https://example.com/wallpaper.jpg"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-dark-900 border border-dark-800 text-xs text-white font-mono focus:outline-none focus:border-theme-accent"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => applyCustomWallpaper(customWallpaperUrl, 'Custom wallpaper applied.')}
+                className="px-4 py-2.5 rounded-xl bg-theme-accent hover:bg-theme-accent/90 text-white text-xs font-bold transition-all whitespace-nowrap"
+              >
+                Apply Link
+              </button>
+              <label className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-dark-800 hover:bg-dark-750 text-theme-title text-xs font-bold border border-dark-700 cursor-pointer transition-all whitespace-nowrap">
+                <Upload className="w-3.5 h-3.5 text-theme-accent" />
+                <span>Upload Image</span>
+                <input type="file" accept="image/*" onChange={handleCustomWallpaperFile} className="hidden" />
+              </label>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 min-w-0">
+              <div
+                className="w-10 h-10 rounded-lg border border-dark-700 bg-cover bg-center flex-shrink-0"
+                style={{
+                  backgroundImage: `url(${JSON.stringify(
+                    wallpaperConfig.type === 'custom' && wallpaperConfig.customUrl
+                      ? wallpaperConfig.customUrl
+                      : '/winter-arc-bg.jpg'
+                  )})`,
+                }}
+              />
+              <span className="text-[10px] text-dark-500">Up to 2 MB. Stored in this browser.</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleUseDefaultWallpaper}
+              className="px-3 py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-dark-300 hover:text-white border border-dark-700 text-xs font-bold transition-all whitespace-nowrap"
+            >
+              Use Default
+            </button>
+          </div>
+          {wallpaperStatus && (
+            <div className={`p-2.5 rounded-xl border text-[11px] font-semibold ${
+              wallpaperStatus.ok
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}>
+              {wallpaperStatus.message}
+            </div>
+          )}
+        </div>
+
         {/* Atmosphere Dimming Control Slider */}
         <div className="p-4 rounded-2xl bg-dark-950 border border-dark-800 space-y-3">
           <div className="flex items-center justify-between text-xs">
@@ -409,184 +496,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Bro Bot Engine Settings */}
-      <div className="p-6 rounded-3xl bg-dark-900 border border-dark-800 space-y-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
-              <Bot className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-base font-bold text-theme-title font-sans">Bro Bot Intelligence Engine</h3>
-                <span
-                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                    modelInfo.isCloud
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                      : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30'
-                  }`}
-                >
-                  {modelInfo.modelName}
-                </span>
-              </div>
-              <p className="text-xs text-dark-400">{modelInfo.statusText}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-1">
-          {/* Provider Selector Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              {
-                id: 'gemini',
-                title: 'Google Gemini',
-                subtitle: 'Cloud LLM for phone & desktop (Recommended)',
-              },
-              {
-                id: 'ollama',
-                title: 'Ollama',
-                subtitle: 'Local laptop LLM on port 11434',
-              },
-              {
-                id: 'lmstudio',
-                title: 'LM Studio',
-                subtitle: 'Local server on port 1234',
-              },
-              {
-                id: 'offline',
-                title: 'Offline NLP',
-                subtitle: 'Built-in fast rule parser',
-              },
-            ].map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => handleUpdateAI({ provider: p.id as any })}
-                className={`p-3 rounded-2xl border text-left transition-all ${
-                  aiConfig.provider === p.id
-                    ? 'border-theme-accent bg-dark-850 ring-2 ring-theme-accent/30 text-theme-title'
-                    : 'border-dark-800 bg-dark-950 text-dark-400 hover:border-dark-700'
-                }`}
-              >
-                <div className="text-xs font-bold">{p.title}</div>
-                <div className="text-[10px] text-dark-400 mt-0.5 leading-snug">{p.subtitle}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Gemini API Key Box */}
-          {aiConfig.provider === 'gemini' && (
-            <div className="p-4 rounded-2xl bg-dark-950 border border-theme-accent/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-theme-accent flex items-center space-x-1.5">
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Google Gemini API Key</span>
-                </span>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-theme-accent hover:underline flex items-center space-x-1"
-                >
-                  <span>Get Free Key (Google AI Studio)</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              </div>
-
-              <input
-                type="password"
-                value={aiConfig.apiKey || ''}
-                onChange={e => handleUpdateAI({ apiKey: e.target.value })}
-                placeholder="Paste Gemini API Key (AIzaSy...)"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-dark-900 border border-dark-800 text-xs text-white font-mono focus:outline-none focus:border-theme-accent"
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="text-[11px] font-semibold text-dark-300 block mb-1">
-                    Gemini Model
-                  </label>
-                  <select
-                    value={aiConfig.geminiModel || 'gemini-3.5-flash'}
-                    onChange={e => handleUpdateAI({ geminiModel: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-dark-900 border border-dark-800 text-xs text-white"
-                  >
-                    <option value="gemini-3.5-flash">gemini-3.5-flash (High Speed, Free Tier Recommended)</option>
-                    <option value="gemini-3.6-flash">gemini-3.6-flash (Advanced Reasoning Flash)</option>
-                    <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Ultra Fast & Lightweight)</option>
-                  </select>
-                </div>
-
-                <div className="text-[10px] text-dark-400 flex items-center">
-                  Free tier keys work with zero cost. With this key, Bro Bot can reason about tasks and schedule them directly on any device!
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Ollama / LM Studio endpoint inputs */}
-          {(aiConfig.provider === 'ollama' || aiConfig.provider === 'lmstudio') && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-dark-400">Endpoint URL</label>
-                <input
-                  type="text"
-                  value={aiConfig.endpointUrl}
-                  onChange={e => handleUpdateAI({ endpointUrl: e.target.value })}
-                  placeholder="http://localhost:11434"
-                  className="w-full px-3 py-2 rounded-xl bg-dark-950 border border-dark-800 text-xs text-theme-title font-mono"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-dark-400">Model Name</label>
-                <input
-                  type="text"
-                  value={aiConfig.model}
-                  onChange={e => handleUpdateAI({ model: e.target.value })}
-                  placeholder="llama3.2"
-                  className="w-full px-3 py-2 rounded-xl bg-dark-950 border border-dark-800 text-xs text-theme-title font-mono"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Test Link Button */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <span className="text-xs text-dark-400">
-              {aiConfig.provider === 'gemini'
-                ? 'Validates API key with Google servers.'
-                : 'Pings local engine endpoint.'}
-            </span>
-
-            <button
-              type="button"
-              onClick={handleTestAI}
-              disabled={aiTesting}
-              className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-dark-800 hover:bg-dark-750 text-theme-title text-xs font-bold border border-dark-700 transition-all disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${aiTesting ? 'animate-spin text-theme-accent' : ''}`} />
-              <span>{aiTesting ? 'Testing Link...' : 'Test Connection'}</span>
-            </button>
-          </div>
-
-          {aiTestResult && (
-            <div
-              className={`p-3 rounded-xl border text-xs font-semibold flex items-center space-x-2 ${
-                aiTestResult.ok
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              }`}
-            >
-              {aiTestResult.ok ? <Check className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-              <span>{aiTestResult.message}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Exact local database records — the source Bro Bot reads */}
+      {/* Exact local database records */}
       <DatabaseViewer />
 
       {/* Data Management & Clean-up */}

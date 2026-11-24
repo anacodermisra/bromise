@@ -209,7 +209,7 @@ export const DatabaseViewer: React.FC = () => {
           <div>
             <h3 className="text-base font-bold text-theme-title font-sans">Database Viewer</h3>
             <p className="text-xs text-dark-400 mt-0.5">
-              The exact records Bro Bot reads from this browser. Nothing hidden, nothing summarised.
+              The exact records stored in this browser. Nothing hidden, nothing summarised.
             </p>
           </div>
         </div>
@@ -277,8 +277,8 @@ export const DatabaseViewer: React.FC = () => {
 
       {orphanTasks.length > 0 && (
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] leading-relaxed">
-          <b>{orphanTasks.length} active task(s) have a deleted/missing category.</b> Bro Bot will label them
-          “(category deleted)” and still find them by name. Examples: {orphanTasks.slice(0, 4).map(t => t.title).join(', ')}.
+          <b>{orphanTasks.length} active task(s) have a deleted/missing category.</b> They are marked
+          “(category deleted)” and can still be found by name. Examples: {orphanTasks.slice(0, 4).map(t => t.title).join(', ')}.
         </div>
       )}
 
@@ -415,7 +415,7 @@ export const DatabaseViewer: React.FC = () => {
         {tab === 'raw' && (
           <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
             <div className="text-[11px] text-dark-400">
-              Every <code className="text-theme-accent">bromise_</code> key in this browser. This is the raw source of truth Bro Bot reads.
+              Every <code className="text-theme-accent">bromise_</code> key in this browser. This is the raw local source of truth.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {Object.entries(localSnapshot.keys).map(([key, value]) => (

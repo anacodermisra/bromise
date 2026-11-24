@@ -98,7 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('bromise-open-update-modal'))}
                   className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-theme-accent/20 hover:bg-theme-accent/35 text-theme-accent border border-theme-accent/30 font-mono transition-colors cursor-pointer"
-                  title="Click to view What's New in v1.2"
+                  title={`Click to view What's New in v${APP_VERSION}`}
                 >
                   v{APP_VERSION}
                 </button>

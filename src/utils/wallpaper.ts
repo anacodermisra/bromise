@@ -191,17 +191,34 @@ export const WALLPAPER_PRESETS: WallpaperPreset[] = [
 
 const WALLPAPER_CONFIG_KEY = 'bromise_wallpaper_config';
 
+export function normalizeCustomWallpaperUrl(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^data:image\//i.test(value) || /^blob:/i.test(value)) return value;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) {
+    try {
+      return new URL(value, window.location.origin).href;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function getStoredWallpaperConfig(): WallpaperConfig {
   try {
     const raw = localStorage.getItem(WALLPAPER_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
+        const customUrl = normalizeCustomWallpaperUrl(parsed.customUrl || '');
+        const requestedCustom = parsed.type === 'custom';
         return {
           enabled: parsed.enabled ?? true,
-          type: parsed.type || 'preset',
+          type: requestedCustom && customUrl ? 'custom' : 'preset',
           presetId: parsed.presetId || 'winter-arc',
-          customUrl: parsed.customUrl,
+          customUrl: customUrl || undefined,
           dimOpacity: parsed.dimOpacity ?? 0.45,
           blurPx: parsed.blurPx ?? 0,
           roomWallpapers: {
@@ -226,9 +243,17 @@ export function getStoredWallpaperConfig(): WallpaperConfig {
 }
 
 export function saveWallpaperConfig(config: WallpaperConfig) {
+  let saved = config;
+  if (config.type === 'custom') {
+    const customUrl = normalizeCustomWallpaperUrl(config.customUrl || '');
+    saved = customUrl
+      ? { ...config, customUrl }
+      : { ...config, type: 'preset', customUrl: undefined };
+  }
+
   try {
-    localStorage.setItem(WALLPAPER_CONFIG_KEY, JSON.stringify(config));
-    window.dispatchEvent(new CustomEvent('bromise-wallpaper-change', { detail: config }));
+    localStorage.setItem(WALLPAPER_CONFIG_KEY, JSON.stringify(saved));
+    window.dispatchEvent(new CustomEvent('bromise-wallpaper-change', { detail: saved }));
   } catch (e) {
     console.error('Failed to save wallpaper config:', e);
   }

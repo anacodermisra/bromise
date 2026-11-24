@@ -37,7 +37,6 @@ import { CategoryDeleteModal } from './components/tasks/CategoryDeleteModal';
 import { UpdateAnnouncementModal } from './components/common/UpdateAnnouncementModal';
 import { GymRoomView } from './components/gym/GymRoomView';
 import { StudyRoomView } from './components/study/StudyRoomView';
-import { BroAIAssistant } from './components/ai/BroAIAssistant';
 import {
   getStoredWallpaperConfig,
   getActiveWallpaperUrl,
@@ -389,7 +388,7 @@ const MainAppContent: React.FC = () => {
         <div
           className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-all duration-700 ease-out"
           style={{
-            backgroundImage: `url("${activeWallpaperUrl}")`,
+            backgroundImage: activeWallpaperUrl ? `url(${JSON.stringify(activeWallpaperUrl)})` : undefined,
             filter:
               wallpaperConfig.blurPx > 0 && !isDedicatedRoomView
                 ? `blur(${wallpaperConfig.blurPx}px)`
@@ -603,12 +602,6 @@ const MainAppContent: React.FC = () => {
       <UpdateAnnouncementModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
-      />
-
-      {/* Floating Bro Bot Assistant Engine */}
-      <BroAIAssistant
-        selectedDate={selectedDate}
-        onDataChanged={reloadLocalData}
       />
     </div>
   );
