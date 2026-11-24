@@ -7,7 +7,7 @@ import {
   syncGetCategories, syncGetTasks,
   syncGetCompletions, syncGetOrInitDailyPlan,
   syncAddCategory, syncUpdateCategory, syncDeleteCategory,
-  syncAddTask, syncUpdateTask, syncDeleteTask,
+  syncAddTask, syncUpdateTask, syncDeleteTask, syncFinishTask,
   syncAddToToday, syncRemoveFromToday, syncReorderToday,
   syncAssignTimeSlot, syncRemoveTimeSlot, syncTogglePlanItemCompletion,
   syncToggleCompletion,
@@ -335,10 +335,20 @@ const MainAppContent: React.FC = () => {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      await syncDeleteTask(taskId);
+      await syncDeleteTask(taskId, selectedDate);
       reloadLocalData();
     } catch (error) {
       console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleFinishTask = async (taskId: string) => {
+    try {
+      await syncFinishTask(taskId, selectedDate);
+      reloadLocalData();
+      setToastMessage('Task completed & archived 🎉');
+    } catch (error) {
+      console.error('Failed to finish task:', error);
     }
   };
 
@@ -494,6 +504,7 @@ const MainAppContent: React.FC = () => {
                   setIsTaskModalOpen(true);
                 }}
                 onDeleteTask={handleDeleteTask}
+                onFinishTask={handleFinishTask}
               />
             )}
 

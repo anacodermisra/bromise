@@ -70,7 +70,8 @@ export const api = {
   getTasks: () => req<any[]>('GET', '/tasks'),
   createTask: (data: any) => req<any>('POST', '/tasks', data),
   updateTask: (id: string, data: any) => req<any>('PUT', `/tasks/${id}`, data),
-  deleteTask: (id: string) => req<any>('DELETE', `/tasks/${id}`, {}),
+  deleteTask: (id: string, date?: string) => req<any>('DELETE', `/tasks/${id}`, { date }),
+  finishTask: (id: string, date?: string) => req<any>('POST', `/tasks/${id}/finish`, { date }),
 
   // Plans
   getPlans: (date?: string) =>

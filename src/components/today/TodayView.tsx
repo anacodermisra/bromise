@@ -54,6 +54,7 @@ interface TodayViewProps {
   onTogglePlanSlotComplete?: (planItemId: string) => void;
   onOpenTaskModal: (task?: Task) => void;
   onDeleteTask: (taskId: string) => void;
+  onFinishTask?: (taskId: string) => void;
   onChangeDate?: (date: string) => void;
 }
 
@@ -113,6 +114,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   onTogglePlanSlotComplete,
   onOpenTaskModal,
   onDeleteTask,
+  onFinishTask,
   onChangeDate,
 }) => {
   const [scheduleMode, setScheduleMode] = useState<'list' | 'timetable'>('list');
@@ -681,7 +683,13 @@ export const TodayView: React.FC<TodayViewProps> = ({
         category={categories.find(c => c.id === completedTaskForModal?.categoryId)}
         onClose={() => setIsCompletionModalOpen(false)}
         onKeepInBacklog={() => setIsCompletionModalOpen(false)}
-        onFinishTask={(taskId) => onDeleteTask(taskId)}
+        onFinishTask={(taskId) => {
+          if (onFinishTask) {
+            onFinishTask(taskId);
+          } else {
+            onDeleteTask(taskId);
+          }
+        }}
       />
     </div>
   );

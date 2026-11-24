@@ -119,7 +119,7 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({
                 Mark Entire Task Finished! 🎉
               </div>
               <div className="text-[11px] text-emerald-400/70 mt-0.5">
-                Complete the task entirely and remove it from active backlog.
+                Complete this task entirely and archive it from backlog. It stays preserved in today's completed list & timetable.
               </div>
             </div>
           </button>

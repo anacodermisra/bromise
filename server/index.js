@@ -232,19 +232,37 @@ app.delete('/api/categories/:id', requireAuth, async (req, res) => {
 // TASKS (USER PROTECTED)
 // ─────────────────────────────────────────
 app.get('/api/tasks', requireAuth, async (req, res) => {
-  const tasksResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=? ORDER BY created_at ASC', args: [req.userId] });
-  const tasks = tasksResult.rows;
-  const result = [];
-  for (const t of tasks) {
-    const recResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
-    const rec = recResult.rows[0];
-    const subtasksResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [t.id, req.userId] });
-    const subtasks = subtasksResult.rows;
-    const mapped = mapTask(t, rec);
-    mapped.subtasks = subtasks.map(mapSubtask);
-    result.push(mapped);
+  try {
+    const [tasksResult, recResult, subtasksResult] = await Promise.all([
+      db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=? ORDER BY created_at ASC', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM subtasks WHERE user_id=? ORDER BY position ASC', args: [req.userId] }),
+    ]);
+
+    const recMap = new Map();
+    for (const r of recResult.rows) {
+      recMap.set(r.task_id, r);
+    }
+
+    const subtasksMap = new Map();
+    for (const s of subtasksResult.rows) {
+      if (!subtasksMap.has(s.task_id)) {
+        subtasksMap.set(s.task_id, []);
+      }
+      subtasksMap.get(s.task_id).push(mapSubtask(s));
+    }
+
+    const result = tasksResult.rows.map(t => {
+      const mapped = mapTask(t, recMap.get(t.id));
+      mapped.subtasks = subtasksMap.get(t.id) || [];
+      return mapped;
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to get tasks:', err);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
   }
-  res.json(result);
 });
 
 app.post('/api/tasks', requireAuth, async (req, res) => {
@@ -301,10 +319,35 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   if (!taskCheck.rows[0]) {
     return res.status(404).json({ error: 'not found' });
   }
-  const today = new Date().toISOString().split('T')[0];
-  await db.execute({ sql: 'DELETE FROM subtasks WHERE task_id=? AND user_id=?', args: [id, req.userId] });
+  const today = req.body?.date || new Date().toISOString().split('T')[0];
+  // Remove only future plans (date > today) to keep historical logs & today's schedule intact
   await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, today] });
   await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [nowISO(), id, req.userId] });
+  res.json({ ok: true });
+});
+
+app.post('/api/tasks/:id/finish', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const taskCheck = await db.execute({ sql: 'SELECT id FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
+  if (!taskCheck.rows[0]) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  const { date = new Date().toISOString().split('T')[0] } = req.body || {};
+  const now = nowISO();
+
+  // 1. Mark task as archived
+  await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [now, id, req.userId] });
+
+  // 2. Ensure completions table has completed=1 for that date
+  const compId = `comp-${date}-${id}`;
+  await db.execute({
+    sql: 'INSERT INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(id) DO UPDATE SET completed=1, completed_at=excluded.completed_at',
+    args: [compId, req.userId, id, date, now]
+  });
+
+  // 3. Delete only future plans (date > ?), keep today's plan and historical plans!
+  await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, date] });
+
   res.json({ ok: true });
 });
 
@@ -684,26 +727,35 @@ app.get('/api/stats/account-start', requireAuth, async (req, res) => {
 // EXPORT / IMPORT / RESET (USER PROTECTED)
 // ─────────────────────────────────────────
 app.get('/api/export', requireAuth, async (req, res) => {
-  const catsRes = await db.execute({ sql: 'SELECT * FROM categories WHERE user_id=?', args: [req.userId] });
-  const tasksRes = await db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=?', args: [req.userId] });
-  const plansRes = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=?', args: [req.userId] });
-  const compRes = await db.execute({ sql: 'SELECT * FROM completions WHERE user_id=?', args: [req.userId] });
+  try {
+    const [catsRes, tasksRes, recRes, plansRes, compRes] = await Promise.all([
+      db.execute({ sql: 'SELECT * FROM categories WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM completions WHERE user_id=?', args: [req.userId] }),
+    ]);
 
-  const tasksWithRec = [];
-  for (const t of tasksRes.rows) {
-    const recRes = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
-    tasksWithRec.push(mapTask(t, recRes.rows[0]));
+    const recMap = new Map();
+    for (const r of recRes.rows) {
+      recMap.set(r.task_id, r);
+    }
+
+    const tasksWithRec = tasksRes.rows.map(t => mapTask(t, recMap.get(t.id)));
+
+    const data = {
+      categories: catsRes.rows.map(mapCategory),
+      tasks: tasksWithRec,
+      dailyPlans: plansRes.rows.map(mapPlan),
+      completions: compRes.rows.map(mapCompletion),
+      exportedAt: nowISO(),
+    };
+    res.setHeader('Content-Disposition', `attachment; filename=bromise_backup_${new Date().toISOString().split('T')[0]}.json`);
+    res.json(data);
+  } catch (err) {
+    console.error('Failed to export data:', err);
+    res.status(500).json({ error: 'Failed to export data' });
   }
-
-  const data = {
-    categories: catsRes.rows.map(mapCategory),
-    tasks: tasksWithRec,
-    dailyPlans: plansRes.rows.map(mapPlan),
-    completions: compRes.rows.map(mapCompletion),
-    exportedAt: nowISO(),
-  };
-  res.setHeader('Content-Disposition', `attachment; filename=bromise_backup_${new Date().toISOString().split('T')[0]}.json`);
-  res.json(data);
 });
 
 app.post('/api/import', requireAuth, async (req, res) => {

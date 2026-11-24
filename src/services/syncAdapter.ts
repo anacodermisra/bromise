@@ -26,7 +26,7 @@ import {
   getCategories, saveCategories, addCategory as lsAddCategory,
   updateCategory as lsUpdateCategory, deleteCategory as lsDeleteCategory,
   getTasks, saveTasks, addTask as lsAddTask,
-  updateTask as lsUpdateTask, deleteTask as lsDeleteTask,
+  updateTask as lsUpdateTask, deleteTask as lsDeleteTask, finishTask as lsFinishTask,
   getDailyPlans, saveDailyPlans, addTasksToDailyPlan as lsAddToPlan,
   removeTaskFromDailyPlan as lsRemoveFromPlan, reorderDailyPlan as lsReorder,
   getOrInitDailyPlan, assignTaskToTimeSlot as lsAssignTimeSlot, removeTaskTimeSlot as lsRemoveTimeSlot,
@@ -98,6 +98,10 @@ function dequeue(id: string) {
   saveQueue(getQueue().filter(op => op.id !== id));
 }
 
+export function clearQueue() {
+  saveQueue([]);
+}
+
 async function drainQueue() {
   const queue = getQueue();
   if (queue.length === 0) return;
@@ -127,7 +131,8 @@ async function executeOp(op: SyncOp) {
     case 'DELETE_CATEGORY': await api.deleteCategory(p.id, { action: p.action, targetCategoryId: p.targetCategoryId }); break;
     case 'ADD_TASK':        await api.createTask(p); break;
     case 'UPDATE_TASK':     await api.updateTask(p.id, p); break;
-    case 'DELETE_TASK':     await api.deleteTask(p.id); break;
+    case 'DELETE_TASK':     await api.deleteTask(p.id, p.date); break;
+    case 'FINISH_TASK':     await api.finishTask(p.id, p.date); break;
     case 'ADD_PLAN':        await api.createPlan(p); break;
     case 'REMOVE_PLAN':     {
       const plans = await api.getPlans(p.date);
@@ -353,9 +358,16 @@ export async function syncUpdateTask(id: string, updates: Partial<Task>): Promis
   await trySync(() => {}, 'UPDATE_TASK', { id, ...updates });
 }
 
-export async function syncDeleteTask(id: string): Promise<void> {
-  lsDeleteTask(id);
-  await trySync(() => {}, 'DELETE_TASK', { id });
+export async function syncDeleteTask(id: string, date?: string): Promise<void> {
+  const targetDate = date || formatDateKey(new Date());
+  lsDeleteTask(id, targetDate);
+  await trySync(() => {}, 'DELETE_TASK', { id, date: targetDate });
+}
+
+export async function syncFinishTask(id: string, date?: string): Promise<void> {
+  const targetDate = date || formatDateKey(new Date());
+  lsFinishTask(id, targetDate);
+  await trySync(() => {}, 'FINISH_TASK', { id, date: targetDate });
 }
 
 // ─── PLANS ────────────────────────────────────────────────
@@ -444,7 +456,10 @@ export async function syncImportData(jsonStr: string): Promise<{ success: boolea
       return { success: false, error: 'Invalid backup file: categories and tasks arrays are required' };
     }
 
-    // 1. Save to LocalStorage immediately so local state is fully restored
+    // 1. Clear any stale pending sync operations before restoring new data
+    clearQueue();
+
+    // 2. Save to LocalStorage immediately so local state is fully restored
     const localSaved = importDataJSON(jsonStr);
     if (!localSaved) {
       return { success: false, error: 'Failed to parse and store backup locally' };
@@ -453,10 +468,12 @@ export async function syncImportData(jsonStr: string): Promise<{ success: boolea
     const payload = {
       categories: parsed.categories,
       tasks: parsed.tasks,
-      dailyPlans: Array.isArray(parsed.dailyPlans) ? parsed.dailyPlans : [],
+      dailyPlans: Array.isArray(parsed.dailyPlans)
+        ? parsed.dailyPlans
+        : (Array.isArray(parsed.daily_plans) ? parsed.daily_plans : []),
       completions: Array.isArray(parsed.completions) ? parsed.completions : [],
-      gymSchedule: parsed.gymSchedule || null,
-      studyBooks: parsed.studyBooks || null,
+      gymSchedule: parsed.gymSchedule || parsed.gym_schedule || null,
+      studyBooks: parsed.studyBooks || parsed.study_books || null,
     };
 
     // 2. If server is online, push to server directly and wait for confirmation

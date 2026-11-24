@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { Task, Category } from '../../types';
 import { IconHelper } from '../common/IconHelper';
 import { getDeadlineStatus } from '../../utils/deadlineHelper';
-import { Plus, Search, Filter, Pencil, Trash2, Repeat, ArrowUpRight, FolderPlus, CalendarClock } from 'lucide-react';
+import { Plus, Search, Filter, Pencil, Trash2, Repeat, ArrowUpRight, FolderPlus, CalendarClock, Archive } from 'lucide-react';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -32,6 +32,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [recurringOnly, setRecurringOnly] = useState(false);
   const [deadlinesOnly, setDeadlinesOnly] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const archivedTasksCount = tasks.filter(t => !!t.archivedAt).length;
 
   const filteredTasks = tasks.filter(task => {
     const taskCat = categories.find(c => c.id === task.categoryId);
@@ -45,7 +48,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
     const matchesPriority = priorityFilter === 'all' ? true : task.priority === priorityFilter;
     const matchesRecurring = recurringOnly ? task.isRecurring : true;
     const matchesDeadline = deadlinesOnly ? !!task.deadline : true;
-    return matchesCat && matchesSearch && matchesPriority && matchesRecurring && matchesDeadline;
+    const matchesArchived = showArchived ? !!task.archivedAt : !task.archivedAt;
+    return matchesCat && matchesSearch && matchesPriority && matchesRecurring && matchesDeadline && matchesArchived;
   });
 
   const filteredCategories = categories.filter(c =>
@@ -100,12 +104,12 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <Filter className="w-4 h-4" />
             </div>
             <div className="text-sm font-bold truncate">All Tasks</div>
-            <div className="text-xs text-dark-500 mt-1">{tasks.length} total tasks</div>
+            <div className="text-xs text-dark-500 mt-1">{showArchived ? `${archivedTasksCount} archived` : `${tasks.filter(t => !t.archivedAt).length} active tasks`}</div>
           </button>
 
           {filteredCategories.map(cat => {
             const isSelected = activeCategoryFilter === cat.id;
-            const catTasksCount = tasks.filter(t => t.categoryId === cat.id).length;
+            const catTasksCount = tasks.filter(t => t.categoryId === cat.id && (showArchived ? !!t.archivedAt : !t.archivedAt)).length;
             return (
               <div
                 key={cat.id}
@@ -231,6 +235,21 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <Repeat className="w-3.5 h-3.5" />
               <span>Daily Recurring</span>
             </button>
+
+            {archivedTasksCount > 0 && (
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors ${
+                  showArchived
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-glow-sm'
+                    : 'bg-dark-950 text-dark-500 border-dark-800 hover:text-theme-title'
+                }`}
+                title="Toggle viewing archived/completed tasks"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>Archived ({archivedTasksCount})</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -295,6 +314,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
                       >
                         {task.priority}
                       </span>
+
+                      {task.archivedAt && (
+                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          <Archive className="w-3 h-3" />
+                          <span>Archived</span>
+                        </span>
+                      )}
                     </div>
 
                     {task.notes && <p className="text-xs text-dark-500 truncate">{task.notes}</p>}

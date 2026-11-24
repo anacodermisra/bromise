@@ -167,11 +167,40 @@ export function updateTask(id: string, updates: Partial<Task>): Task[] {
   return tasks;
 }
 
-export function deleteTask(id: string) {
+export function deleteTask(id: string, fromDate?: string) {
   const tasks = getTasks().map(t => t.id === id ? { ...t, archivedAt: new Date().toISOString() } : t);
   saveTasks(tasks);
-  const today = formatDateKey(new Date());
-  const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date >= today));
+  const cutoff = fromDate || formatDateKey(new Date());
+  // Keep today's plan and historical plans intact; only purge future plans
+  const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date > cutoff));
+  saveDailyPlans(plans);
+}
+
+export function finishTask(id: string, dateStr?: string) {
+  const today = dateStr || formatDateKey(new Date());
+  // 1. Mark task as archived
+  const tasks = getTasks().map(t => t.id === id ? { ...t, archivedAt: new Date().toISOString() } : t);
+  saveTasks(tasks);
+
+  // 2. Ensure marked complete for this day
+  const completions = getCompletions();
+  const existingIndex = completions.findIndex(c => c.taskId === id && c.date === today);
+  const now = new Date().toISOString();
+  if (existingIndex >= 0) {
+    completions[existingIndex] = { ...completions[existingIndex], completed: true, completedAt: now };
+    saveCompletions([...completions]);
+  } else {
+    saveCompletions([...completions, {
+      id: `comp-${today}-${id}`,
+      taskId: id,
+      date: today,
+      completed: true,
+      completedAt: now,
+    }]);
+  }
+
+  // 3. Remove only FUTURE daily plans (date > today), keep today's plan and past plans!
+  const plans = getDailyPlans().filter(p => !(p.taskId === id && p.date > today));
   saveDailyPlans(plans);
 }
 
@@ -723,10 +752,14 @@ export function importDataJSON(jsonStr: string): boolean {
       );
       saveCategories(cats);
       saveTasks(tasks);
-      if (parsed.dailyPlans) saveDailyPlans(parsed.dailyPlans);
-      if (parsed.completions) saveCompletions(parsed.completions);
-      if (parsed.gymSchedule) saveGymSchedule(parsed.gymSchedule);
-      if (parsed.studyBooks) saveStudyBooks(parsed.studyBooks);
+      const plans = parsed.dailyPlans || parsed.daily_plans;
+      if (plans && Array.isArray(plans)) saveDailyPlans(plans);
+      const comps = parsed.completions;
+      if (comps && Array.isArray(comps)) saveCompletions(comps);
+      const gym = parsed.gymSchedule || parsed.gym_schedule;
+      if (gym) saveGymSchedule(gym);
+      const books = parsed.studyBooks || parsed.study_books;
+      if (books && Array.isArray(books)) saveStudyBooks(books);
       return true;
     }
     return false;
