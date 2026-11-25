@@ -31,3 +31,5 @@ data/
 # Android build outputs & local artifacts
 *.apk
 emulator_screen.png
+.vercel
+.env*

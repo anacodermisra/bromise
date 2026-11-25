@@ -1,9 +1,22 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const { createClient } = require('@libsql/client');
 require('dotenv').config();
 
+const dbUrl = process.env.TURSO_DATABASE_URL || (process.env.VERCEL ? 'file:/tmp/bromise.db' : 'file:./data/bromise.db');
+if (dbUrl.startsWith('file:')) {
+  const filePath = dbUrl.replace(/^file:/, '');
+  const dir = path.dirname(filePath);
+  if (dir && !fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (_) {}
+  }
+}
+
 const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:./data/bromise.db',
+  url: dbUrl,
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 

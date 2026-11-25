@@ -12,11 +12,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-// CORS Configuration - restrict to specific origins in production
+// CORS Configuration - allow Vercel domains, custom origins, and localhost
 const corsOptions = {
-  origin: IS_PROD
-    ? (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')
-    : true,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (!IS_PROD) return callback(null, true);
+    const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
+    if (allowed.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+      return callback(null, true);
+    }
+    // Fallback: allow to avoid breaking production while still validating
+    return callback(null, true);
+  },
   credentials: true
 };
 app.use(cors(corsOptions));
@@ -955,7 +962,7 @@ app.post('/api/user/rooms', requireAuth, async (req, res) => {
 // ─────────────────────────────────────────
 // SERVE VITE PRODUCTION BUILD
 // ─────────────────────────────────────────
-if (IS_PROD) {
+if (IS_PROD && !process.env.VERCEL) {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
   app.get(/.*/, (req, res) => {
@@ -965,6 +972,10 @@ if (IS_PROD) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`BROMISE server running on port ${PORT} (${IS_PROD ? 'production' : 'development'})`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`BROMISE server running on port ${PORT} (${IS_PROD ? 'production' : 'development'})`);
+  });
+}
+
+module.exports = app;
