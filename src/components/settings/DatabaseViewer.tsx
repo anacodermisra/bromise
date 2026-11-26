@@ -118,13 +118,13 @@ export const DatabaseViewer: React.FC = () => {
   };
 
   const counts: Record<TabId, number> = {
-    tasks: localSnapshot.tasks.length,
-    categories: localSnapshot.categories.length,
-    plans: localSnapshot.plans.length,
-    completions: localSnapshot.completions.length,
-    gym: localSnapshot.gym ? Object.keys(localSnapshot.gym).length : 0,
-    study: localSnapshot.study.length,
-    raw: Object.keys(localSnapshot.keys).length,
+    tasks: snapshot.tasks.length,
+    categories: snapshot.categories.length,
+    plans: snapshot.plans.length,
+    completions: snapshot.completions.length,
+    gym: snapshot.gym ? Object.keys(snapshot.gym).length : 0,
+    study: snapshot.study.length,
+    raw: Object.keys(snapshot.keys).length,
   };
 
   const q = query.trim().toLowerCase();
@@ -132,51 +132,51 @@ export const DatabaseViewer: React.FC = () => {
     !q || values.some(v => (v ?? '').toLowerCase().includes(q));
 
   const catName = (id: string) =>
-    localSnapshot.categories.find(c => c.id === id)?.name ?? id;
+    snapshot.categories.find(c => c.id === id)?.name ?? id;
 
   const taskDates = (taskId: string) =>
-    localSnapshot.plans.filter(p => p.taskId === taskId).map(p => p.date).sort();
+    snapshot.plans.filter(p => p.taskId === taskId).map(p => p.date).sort();
 
   const rows: any[] = useMemo(() => {
     switch (tab) {
       case 'tasks':
-        return localSnapshot.tasks.filter(t =>
+        return snapshot.tasks.filter(t =>
           matches(t.title, t.notes, catName(t.categoryId), t.id, t.archivedAt ?? '')
         );
       case 'categories':
-        return localSnapshot.categories.filter(c => matches(c.name, c.id, c.icon));
+        return snapshot.categories.filter(c => matches(c.name, c.id, c.icon));
       case 'plans':
-        return localSnapshot.plans.filter(p =>
-          matches(p.date, p.taskId, localSnapshot.tasks.find(t => t.id === p.taskId)?.title)
+        return snapshot.plans.filter(p =>
+          matches(p.date, p.taskId, snapshot.tasks.find(t => t.id === p.taskId)?.title)
         );
       case 'completions':
-        return localSnapshot.completions.filter(c =>
-          matches(c.date, c.taskId, localSnapshot.tasks.find(t => t.id === c.taskId)?.title)
+        return snapshot.completions.filter(c =>
+          matches(c.date, c.taskId, snapshot.tasks.find(t => t.id === c.taskId)?.title)
         );
       case 'study':
-        return localSnapshot.study.filter(b => matches(b.title, b.id, b.notes));
+        return snapshot.study.filter(b => matches(b.title, b.id, b.notes));
       default:
         return [];
     }
-  }, [tab, localSnapshot, query]);
+  }, [tab, snapshot, query]);
 
   const rawText = useMemo(
     () => JSON.stringify(
       tab === 'raw'
-        ? localSnapshot.keys
+        ? snapshot.keys
         : {
-            scope,
-            categories: localSnapshot.categories,
-            tasks: localSnapshot.tasks,
-            daily_plans: localSnapshot.plans,
-            completions: localSnapshot.completions,
-            gym_schedule: localSnapshot.gym,
-            study_books: localSnapshot.study,
+            scope: source === 'server' ? 'Turso server' : scope,
+            categories: snapshot.categories,
+            tasks: snapshot.tasks,
+            daily_plans: snapshot.plans,
+            completions: snapshot.completions,
+            gym_schedule: snapshot.gym,
+            study_books: snapshot.study,
           },
       null,
       2
     ),
-    [tab, localSnapshot, scope]
+    [tab, snapshot, scope, source]
   );
 
   const copy = async () => {
@@ -335,7 +335,7 @@ export const DatabaseViewer: React.FC = () => {
                   <div className="text-[10px] text-dark-500 font-mono">{c.id}</div>
                 </div>
                 <div className="text-[10px] text-dark-400">
-                  Tasks: <b className="text-theme-accent">{localSnapshot.tasks.filter(t => t.categoryId === c.id).length}</b>
+                  Tasks: <b className="text-theme-accent">{snapshot.tasks.filter(t => t.categoryId === c.id).length}</b>
                   {c.archivedAt && <span className="ml-2 text-rose-400">archived</span>}
                 </div>
               </div>
@@ -350,7 +350,7 @@ export const DatabaseViewer: React.FC = () => {
               <div key={p.id} className="p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-theme-title">
-                    {localSnapshot.tasks.find(t => t.id === p.taskId)?.title ?? p.taskId}
+                    {snapshot.tasks.find(t => t.id === p.taskId)?.title ?? p.taskId}
                   </div>
                   <div className="text-[10px] text-dark-500 font-mono">{p.id}</div>
                 </div>
@@ -370,7 +370,7 @@ export const DatabaseViewer: React.FC = () => {
               <div key={c.id} className="p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-theme-title">
-                    {localSnapshot.tasks.find(t => t.id === c.taskId)?.title ?? c.taskId}
+                    {snapshot.tasks.find(t => t.id === c.taskId)?.title ?? c.taskId}
                   </div>
                   <div className="text-[10px] text-dark-500 font-mono">{fmtDate(c.completedAt)}</div>
                 </div>
@@ -386,7 +386,7 @@ export const DatabaseViewer: React.FC = () => {
 
         {tab === 'gym' && (
           <div className="divide-y divide-dark-800 max-h-96 overflow-y-auto">
-            {Object.values(localSnapshot.gym ?? {}).map(day => (
+            {Object.values(snapshot.gym ?? {}).map(day => (
               <div key={day.id} className="p-3">
                 <div className="text-xs font-bold text-theme-title">{day.dayName} — {day.title}</div>
                 <div className="text-[10px] text-dark-400 mt-1">
@@ -394,7 +394,7 @@ export const DatabaseViewer: React.FC = () => {
                 </div>
               </div>
             ))}
-            {!localSnapshot.gym && <div className="p-6 text-center text-xs text-dark-500">No gym schedule stored.</div>}
+            {!snapshot.gym && <div className="p-6 text-center text-xs text-dark-500">No gym schedule stored.</div>}
           </div>
         )}
 
@@ -418,7 +418,7 @@ export const DatabaseViewer: React.FC = () => {
               Every <code className="text-theme-accent">bromise_</code> key in this browser. This is the raw local source of truth.
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {Object.entries(localSnapshot.keys).map(([key, value]) => (
+              {Object.entries(snapshot.keys).map(([key, value]) => (
                 <div key={key} className="p-2 rounded-lg bg-dark-900 border border-dark-800">
                   <div className="text-[10px] font-mono text-theme-accent break-all">{key}</div>
                   <div className="text-[10px] text-dark-500 mt-0.5">{value.length.toLocaleString()} chars</div>

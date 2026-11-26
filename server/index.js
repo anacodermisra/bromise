@@ -3,28 +3,34 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const { randomUUID } = require('crypto');
 const db = require('./db');
 const { verifyGoogleTokenAndGetUser, requireAuth } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const IS_PROD = process.env.NODE_ENV === 'production';
+const IS_PROD = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
 
-// CORS Configuration - allow Vercel domains, custom origins, and localhost
+// CORS Configuration — allow Vercel deployments, configured custom origins, Capacitor mobile, and localhost
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (!IS_PROD) return callback(null, true);
-    const allowed = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
-    if (allowed.includes(origin) || origin.endsWith('.vercel.app') || origin.includes('localhost')) {
+    if (!origin || !IS_PROD) return callback(null, true);
+    const allowed = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    if (
+      allowed.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('https://localhost') ||
+      origin.startsWith('http://127.0.0.1') ||
+      origin.startsWith('capacitor://')
+    ) {
       return callback(null, true);
     }
-    // Fallback: allow to avoid breaking production while still validating
-    return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
 };
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -44,11 +50,77 @@ app.use((_req, res, next) => {
   next();
 });
 
+// Ensure database schema & indexes are ready on every cold start before hitting routes
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health') return next();
+  try {
+    await db.ensureReady();
+    next();
+  } catch (err) {
+    console.error('Database readiness error:', err);
+    res.status(503).json({ error: 'Database unavailable: ' + (err?.message || 'initialization failed') });
+  }
+});
+
 // ─────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────
 function nowISO() { return new Date().toISOString(); }
 function uid() { return randomUUID(); }
+
+const ALLOWED_ID_TABLES = new Set([
+  'categories',
+  'tasks',
+  'recurrence_rules',
+  'daily_plans',
+  'completions',
+  'subtasks',
+]);
+
+/**
+ * Resolve an incoming client ID safely so another user's primary key is never
+ * overwritten or collided with, while keeping retries by the same user idempotent.
+ */
+async function resolveScopedId(table, userId, requestedId, prefix) {
+  if (!ALLOWED_ID_TABLES.has(table)) {
+    throw new Error(`Unsupported table: ${table}`);
+  }
+  if (!requestedId || typeof requestedId !== 'string') {
+    return `${prefix}-${uid()}`;
+  }
+  const existing = await db.execute({
+    sql: `SELECT user_id FROM ${table} WHERE id = ?`,
+    args: [requestedId],
+  });
+  if (!existing.rows[0] || existing.rows[0].user_id === userId) {
+    return requestedId;
+  }
+  return `${prefix}-${uid()}`;
+}
+
+/**
+ * Query which IDs from a list are already owned by a different user_id.
+ */
+async function findOtherUserOwnedIds(table, ids, userId) {
+  if (!ALLOWED_ID_TABLES.has(table) || !Array.isArray(ids) || ids.length === 0) {
+    return new Set();
+  }
+  const uniqueIds = Array.from(new Set(ids.filter(id => typeof id === 'string' && id.length > 0)));
+  const conflictSet = new Set();
+  const CHUNK = 150;
+  for (let i = 0; i < uniqueIds.length; i += CHUNK) {
+    const chunk = uniqueIds.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    const res = await db.execute({
+      sql: `SELECT id FROM ${table} WHERE user_id != ? AND id IN (${placeholders})`,
+      args: [userId, ...chunk],
+    });
+    for (const row of res.rows) {
+      conflictSet.add(row.id);
+    }
+  }
+  return conflictSet;
+}
 
 // Row mappers: snake_case DB → camelCase JSON
 function mapCategory(row) {
@@ -134,8 +206,22 @@ function mapSubtask(row) {
 // ─────────────────────────────────────────
 // HEALTH & AUTH
 // ─────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: nowISO() });
+app.get('/api/health', async (_req, res) => {
+  try {
+    await db.ensureReady();
+    res.json({
+      status: 'ok',
+      dbPersistent: db.isPersistentCloudDb(),
+      timestamp: nowISO(),
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'error',
+      dbPersistent: db.isPersistentCloudDb(),
+      error: err?.message || 'Database health check failed',
+      timestamp: nowISO(),
+    });
+  }
 });
 
 // Google Authentication Route
@@ -162,7 +248,10 @@ app.post('/api/auth/google', async (req, res) => {
 
 // Get Current User Profile
 app.get('/api/auth/me', requireAuth, async (req, res) => {
-  const userResult = await db.execute({ sql: 'SELECT id, email, name, picture, created_at FROM users WHERE id = ?', args: [req.userId] });
+  const userResult = await db.execute({
+    sql: 'SELECT id, email, name, picture, created_at FROM users WHERE id = ?',
+    args: [req.userId],
+  });
   const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user });
@@ -172,25 +261,49 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 // CATEGORIES (USER PROTECTED)
 // ─────────────────────────────────────────
 app.get('/api/categories', requireAuth, async (req, res) => {
-  const result = await db.execute({ sql: 'SELECT * FROM categories WHERE user_id = ? AND archived = 0 ORDER BY position ASC', args: [req.userId] });
+  const result = await db.execute({
+    sql: 'SELECT * FROM categories WHERE user_id = ? AND archived = 0 ORDER BY position ASC',
+    args: [req.userId],
+  });
   res.json(result.rows.map(mapCategory));
 });
 
 app.post('/api/categories', requireAuth, async (req, res) => {
   const { name, icon = 'Sparkles', accent = '#8b5cf6' } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
-  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM categories WHERE user_id = ?', args: [req.userId] });
-  const maxPos = maxPosResult.rows[0].m;
-  const id = req.body.id || `cat-${uid()}`;
+
+  const id = await resolveScopedId('categories', req.userId, req.body.id, 'cat');
+  const existingSelf = await db.execute({
+    sql: 'SELECT * FROM categories WHERE id=? AND user_id=?',
+    args: [id, req.userId],
+  });
+  if (existingSelf.rows[0]) {
+    return res.status(200).json(mapCategory(existingSelf.rows[0]));
+  }
+
+  const maxPosResult = await db.execute({
+    sql: 'SELECT COALESCE(MAX(position), -1) as m FROM categories WHERE user_id = ?',
+    args: [req.userId],
+  });
+  const maxPos = Number(maxPosResult.rows[0].m);
   const now = nowISO();
-  await db.execute({ sql: 'INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', args: [id, req.userId, name, icon, accent, maxPos + 1, now, now] });
-  const rowResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  await db.execute({
+    sql: 'INSERT INTO categories (id,user_id,name,icon,accent,position,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+    args: [id, req.userId, name, icon, accent, maxPos + 1, now, now],
+  });
+  const rowResult = await db.execute({
+    sql: 'SELECT * FROM categories WHERE id=? AND user_id=?',
+    args: [id, req.userId],
+  });
   res.status(201).json(mapCategory(rowResult.rows[0]));
 });
 
 app.put('/api/categories/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const existingResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  const existingResult = await db.execute({
+    sql: 'SELECT * FROM categories WHERE id=? AND user_id=?',
+    args: [id, req.userId],
+  });
   const existing = existingResult.rows[0];
   if (!existing) return res.status(404).json({ error: 'not found' });
   const now = nowISO();
@@ -198,8 +311,14 @@ app.put('/api/categories/:id', requireAuth, async (req, res) => {
   const icon = req.body.icon ?? existing.icon;
   const accent = req.body.accent ?? existing.accent;
   const position = req.body.position ?? existing.position;
-  await db.execute({ sql: 'UPDATE categories SET name=?,icon=?,accent=?,position=?,updated_at=? WHERE id=? AND user_id=?', args: [name, icon, accent, position, now, id, req.userId] });
-  const rowResult = await db.execute({ sql: 'SELECT * FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+  await db.execute({
+    sql: 'UPDATE categories SET name=?,icon=?,accent=?,position=?,updated_at=? WHERE id=? AND user_id=?',
+    args: [name, icon, accent, position, now, id, req.userId],
+  });
+  const rowResult = await db.execute({
+    sql: 'SELECT * FROM categories WHERE id=? AND user_id=?',
+    args: [id, req.userId],
+  });
   res.json(mapCategory(rowResult.rows[0]));
 });
 
@@ -207,7 +326,10 @@ app.delete('/api/categories/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { action = 'delete', targetCategoryId } = req.body || {};
-    const checkResult = await db.execute({ sql: 'SELECT id FROM categories WHERE id=? AND user_id=?', args: [id, req.userId] });
+    const checkResult = await db.execute({
+      sql: 'SELECT id FROM categories WHERE id=? AND user_id=?',
+      args: [id, req.userId],
+    });
     if (!checkResult.rows[0]) {
       return res.status(404).json({ error: 'not found' });
     }
@@ -217,12 +339,15 @@ app.delete('/api/categories/:id', requireAuth, async (req, res) => {
     if (action === 'move' && targetCategoryId) {
       statements.push({
         sql: 'UPDATE tasks SET category_id=?, updated_at=? WHERE category_id=? AND user_id=?',
-        args: [targetCategoryId, nowISO(), id, req.userId]
+        args: [targetCategoryId, nowISO(), id, req.userId],
       });
     } else {
-      // delete associated daily plans, completions, and tasks in this category
-      const tasksResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE category_id=? AND user_id=?', args: [id, req.userId] });
+      const tasksResult = await db.execute({
+        sql: 'SELECT id FROM tasks WHERE category_id=? AND user_id=?',
+        args: [id, req.userId],
+      });
       for (const t of tasksResult.rows) {
+        statements.push({ sql: 'DELETE FROM subtasks WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
         statements.push({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
         statements.push({ sql: 'DELETE FROM completions WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
         statements.push({ sql: 'DELETE FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [t.id, req.userId] });
@@ -278,21 +403,59 @@ app.get('/api/tasks', requireAuth, async (req, res) => {
 });
 
 app.post('/api/tasks', requireAuth, async (req, res) => {
-  const { title, categoryId, notes, priority = 'medium', deadline, isRecurring = false, recurrenceRule } = req.body;
+  const { title, categoryId, notes, priority = 'medium', deadline, isRecurring = false, recurrenceRule, subtasks } = req.body;
   if (!title || !categoryId) return res.status(400).json({ error: 'title and categoryId required' });
-  const id = req.body.id || `task-${uid()}`;
+
+  const id = await resolveScopedId('tasks', req.userId, req.body.id, 'task');
+  const existingSelf = await db.execute({
+    sql: 'SELECT * FROM tasks WHERE id=? AND user_id=?',
+    args: [id, req.userId],
+  });
+  if (existingSelf.rows[0]) {
+    const recRes = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
+    const mapped = mapTask(existingSelf.rows[0], recRes.rows[0]);
+    const subsRes = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [id, req.userId] });
+    mapped.subtasks = subsRes.rows.map(mapSubtask);
+    return res.status(200).json(mapped);
+  }
+
   const now = nowISO();
-  await db.execute({ sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)', args: [id, req.userId, categoryId, title, notes || null, priority, deadline || null, isRecurring ? 1 : 0, now, now] });
+  await db.execute({
+    sql: 'INSERT INTO tasks (id,user_id,category_id,title,notes,priority,deadline,is_recurring,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    args: [id, req.userId, categoryId, title, notes || null, priority, deadline || null, isRecurring ? 1 : 0, now, now],
+  });
+
   let rec = null;
   if (isRecurring) {
-    const recId = (recurrenceRule && recurrenceRule.id) || `rec-${uid()}`;
+    const recId = await resolveScopedId('recurrence_rules', req.userId, recurrenceRule?.id, 'rec');
     const startDate = (recurrenceRule && recurrenceRule.startDate) || now.split('T')[0];
-    await db.execute({ sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)', args: [recId, req.userId, id, 'daily', startDate, 1] });
+    await db.execute({
+      sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)',
+      args: [recId, req.userId, id, 'daily', startDate, 1],
+    });
     const recResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
     rec = recResult.rows[0];
   }
+
+  const createdSubtasks = [];
+  if (Array.isArray(subtasks) && subtasks.length > 0) {
+    for (let i = 0; i < subtasks.length; i++) {
+      const sub = subtasks[i];
+      if (!sub || !sub.title) continue;
+      const subId = await resolveScopedId('subtasks', req.userId, sub.id, 'sub');
+      await db.execute({
+        sql: 'INSERT OR IGNORE INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)',
+        args: [subId, id, req.userId, String(sub.title).trim(), sub.done ? 1 : 0, Number.isInteger(sub.position) ? sub.position : i, sub.createdAt || now],
+      });
+    }
+    const subsRes = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [id, req.userId] });
+    createdSubtasks.push(...subsRes.rows.map(mapSubtask));
+  }
+
   const taskResult = await db.execute({ sql: 'SELECT * FROM tasks WHERE id=? AND user_id=?', args: [id, req.userId] });
-  res.status(201).json(mapTask(taskResult.rows[0], rec));
+  const mapped = mapTask(taskResult.rows[0], rec);
+  mapped.subtasks = createdSubtasks;
+  res.status(201).json(mapped);
 });
 
 app.put('/api/tasks/:id', requireAuth, async (req, res) => {
@@ -307,15 +470,24 @@ app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   const priority = req.body.priority ?? existing.priority;
   const deadline = req.body.deadline !== undefined ? req.body.deadline : existing.deadline;
   const isRecurring = req.body.isRecurring !== undefined ? (req.body.isRecurring ? 1 : 0) : existing.is_recurring;
-  await db.execute({ sql: 'UPDATE tasks SET category_id=?,title=?,notes=?,priority=?,deadline=?,is_recurring=?,updated_at=? WHERE id=? AND user_id=?', args: [categoryId, title, notes || null, priority, deadline || null, isRecurring, now, id, req.userId] });
+  await db.execute({
+    sql: 'UPDATE tasks SET category_id=?,title=?,notes=?,priority=?,deadline=?,is_recurring=?,updated_at=? WHERE id=? AND user_id=?',
+    args: [categoryId, title, notes || null, priority, deadline || null, isRecurring, now, id, req.userId],
+  });
   if (req.body.recurrenceRule && isRecurring) {
     const rr = req.body.recurrenceRule;
     const existingRecResult = await db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE task_id=? AND user_id=?', args: [id, req.userId] });
     const existing_rec = existingRecResult.rows[0];
     if (existing_rec) {
-      await db.execute({ sql: 'UPDATE recurrence_rules SET frequency=?,start_date=?,end_date=?,active=? WHERE task_id=? AND user_id=?', args: [rr.frequency || 'daily', rr.startDate || existing_rec.start_date, rr.endDate || null, rr.active !== false ? 1 : 0, id, req.userId] });
+      await db.execute({
+        sql: 'UPDATE recurrence_rules SET frequency=?,start_date=?,end_date=?,active=? WHERE task_id=? AND user_id=?',
+        args: [rr.frequency || 'daily', rr.startDate || existing_rec.start_date, rr.endDate || null, rr.active !== false ? 1 : 0, id, req.userId],
+      });
     } else {
-      await db.execute({ sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)', args: [`rec-${uid()}`, req.userId, id, rr.frequency || 'daily', rr.startDate || now.split('T')[0], 1] });
+      await db.execute({
+        sql: 'INSERT INTO recurrence_rules (id,user_id,task_id,frequency,start_date,active) VALUES (?,?,?,?,?,?)',
+        args: [`rec-${uid()}`, req.userId, id, rr.frequency || 'daily', rr.startDate || now.split('T')[0], 1],
+      });
     }
   } else if (!isRecurring) {
     await db.execute({ sql: 'UPDATE recurrence_rules SET active=0 WHERE task_id=? AND user_id=?', args: [id, req.userId] });
@@ -332,8 +504,7 @@ app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'not found' });
   }
   const today = req.body?.date || new Date().toISOString().split('T')[0];
-  // Remove only future plans (date > today) to keep historical logs & today's schedule intact
-  await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, today] });
+  await db.execute({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?', args: [id, req.userId, today] });
   await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [nowISO(), id, req.userId] });
   res.json({ ok: true });
 });
@@ -347,19 +518,26 @@ app.post('/api/tasks/:id/finish', requireAuth, async (req, res) => {
   const { date = new Date().toISOString().split('T')[0] } = req.body || {};
   const now = nowISO();
 
-  // 1. Mark task as archived
   await db.execute({ sql: 'UPDATE tasks SET archived=1, updated_at=? WHERE id=? AND user_id=?', args: [now, id, req.userId] });
 
-  // 2. Ensure completions table has completed=1 for that date
-  const compId = `comp-${date}-${id}`;
-  await db.execute({
-    sql: 'INSERT INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(id) DO UPDATE SET completed=1, completed_at=excluded.completed_at',
-    args: [compId, req.userId, id, date, now]
+  const existingComp = await db.execute({
+    sql: 'SELECT id FROM completions WHERE task_id=? AND date=? AND user_id=?',
+    args: [id, date, req.userId],
   });
+  if (existingComp.rows[0]) {
+    await db.execute({
+      sql: 'UPDATE completions SET completed=1, completed_at=? WHERE id=? AND user_id=?',
+      args: [now, existingComp.rows[0].id, req.userId],
+    });
+  } else {
+    const compId = `comp-${req.userId}-${date}-${id}`;
+    await db.execute({
+      sql: 'INSERT OR IGNORE INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, 1, ?)',
+      args: [compId, req.userId, id, date, now],
+    });
+  }
 
-  // 3. Delete only future plans (date > ?), keep today's plan and historical plans!
-  await db.execute({ sql: "DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?", args: [id, req.userId, date] });
-
+  await db.execute({ sql: 'DELETE FROM daily_plans WHERE task_id=? AND user_id=? AND date > ?', args: [id, req.userId, date] });
   res.json({ ok: true });
 });
 
@@ -369,7 +547,10 @@ app.post('/api/tasks/:id/finish', requireAuth, async (req, res) => {
 app.get('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
   const userId = req.userId;
   const { taskId } = req.params;
-  const rowsResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC', args: [taskId, userId] });
+  const rowsResult = await db.execute({
+    sql: 'SELECT * FROM subtasks WHERE task_id=? AND user_id=? ORDER BY position ASC',
+    args: [taskId, userId],
+  });
   res.json(rowsResult.rows.map(mapSubtask));
 });
 
@@ -378,16 +559,20 @@ app.post('/api/tasks/:taskId/subtasks', requireAuth, async (req, res) => {
   const { taskId } = req.params;
   const { title } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title required' });
-  // Verify task belongs to user
   const taskResult = await db.execute({ sql: 'SELECT id FROM tasks WHERE id=? AND user_id=?', args: [taskId, userId] });
-  const task = taskResult.rows[0];
-  if (!task) return res.status(404).json({ error: 'task not found' });
-  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM subtasks WHERE task_id=? AND user_id=?', args: [taskId, userId] });
-  const maxPos = maxPosResult.rows[0].m;
+  if (!taskResult.rows[0]) return res.status(404).json({ error: 'task not found' });
+  const maxPosResult = await db.execute({
+    sql: 'SELECT COALESCE(MAX(position), -1) as m FROM subtasks WHERE task_id=? AND user_id=?',
+    args: [taskId, userId],
+  });
+  const maxPos = Number(maxPosResult.rows[0].m);
   const id = `sub-${uid()}`;
   const now = nowISO();
-  await db.execute({ sql: 'INSERT INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)', args: [id, taskId, userId, title.trim(), 0, maxPos + 1, now] });
-  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=?', args: [id] });
+  await db.execute({
+    sql: 'INSERT INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?,?,?,?,?,?,?)',
+    args: [id, taskId, userId, title.trim(), 0, maxPos + 1, now],
+  });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [id, userId] });
   res.status(201).json(mapSubtask(rowResult.rows[0]));
 });
 
@@ -400,7 +585,7 @@ app.put('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, res) 
   const title = req.body.title !== undefined ? req.body.title : existing.title;
   const done = req.body.done !== undefined ? (req.body.done ? 1 : 0) : existing.done;
   await db.execute({ sql: 'UPDATE subtasks SET title=?, done=? WHERE id=? AND user_id=?', args: [title, done, subtaskId, userId] });
-  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=?', args: [subtaskId] });
+  const rowResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
   res.json(mapSubtask(rowResult.rows[0]));
 });
 
@@ -408,8 +593,7 @@ app.delete('/api/tasks/:taskId/subtasks/:subtaskId', requireAuth, async (req, re
   const userId = req.userId;
   const { subtaskId } = req.params;
   const existingResult = await db.execute({ sql: 'SELECT * FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
-  const existing = existingResult.rows[0];
-  if (!existing) return res.status(404).json({ error: 'not found' });
+  if (!existingResult.rows[0]) return res.status(404).json({ error: 'not found' });
   await db.execute({ sql: 'DELETE FROM subtasks WHERE id=? AND user_id=?', args: [subtaskId, userId] });
   res.json({ ok: true });
 });
@@ -421,21 +605,38 @@ app.get('/api/plans', requireAuth, async (req, res) => {
   const { date } = req.query;
   let rows;
   if (date) {
-    const recurringTasksResult = await db.execute({ sql: 'SELECT t.id FROM tasks t JOIN recurrence_rules r ON r.task_id=t.id WHERE t.user_id=? AND t.archived=0 AND r.active=1 AND r.start_date <= ?', args: [req.userId, date] });
+    const recurringTasksResult = await db.execute({
+      sql: 'SELECT t.id FROM tasks t JOIN recurrence_rules r ON r.task_id=t.id WHERE t.user_id=? AND t.archived=0 AND r.active=1 AND r.start_date <= ?',
+      args: [req.userId, date],
+    });
     const recurringTasks = recurringTasksResult.rows;
     for (const t of recurringTasks) {
-      const existingResult = await db.execute({ sql: 'SELECT id FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [t.id, date, req.userId] });
-      const existing = existingResult.rows[0];
-      if (!existing) {
-        const countResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
-        const maxPos = countResult.rows[0].m;
-        await db.execute({ sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)', args: [`plan-${date}-${t.id}`, req.userId, t.id, date, maxPos + 1, 'recurring'] });
+      const existingResult = await db.execute({
+        sql: 'SELECT id FROM daily_plans WHERE task_id=? AND date=? AND user_id=?',
+        args: [t.id, date, req.userId],
+      });
+      if (!existingResult.rows[0]) {
+        const countResult = await db.execute({
+          sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?',
+          args: [date, req.userId],
+        });
+        const maxPos = Number(countResult.rows[0].m);
+        await db.execute({
+          sql: 'INSERT OR IGNORE INTO daily_plans (id,user_id,task_id,date,position,source_type) VALUES (?,?,?,?,?,?)',
+          args: [`plan-${req.userId}-${date}-${t.id}`, req.userId, t.id, date, maxPos + 1, 'recurring'],
+        });
       }
     }
-    const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC', args: [date, req.userId] });
+    const rowsResult = await db.execute({
+      sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC',
+      args: [date, req.userId],
+    });
     rows = rowsResult.rows;
   } else {
-    const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=? ORDER BY date DESC, position ASC', args: [req.userId] });
+    const rowsResult = await db.execute({
+      sql: 'SELECT * FROM daily_plans WHERE user_id=? ORDER BY date DESC, position ASC',
+      args: [req.userId],
+    });
     rows = rowsResult.rows;
   }
   res.json(rows.map(mapPlan));
@@ -460,36 +661,40 @@ app.post('/api/plans', requireAuth, async (req, res) => {
   const dur = durationMinutes || (sTime ? 60 : null);
   const isComp = completed ? 1 : 0;
 
-  // If client provided a specific ID and it already exists, update it
   if (clientPlanId) {
-    const existingById = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [clientPlanId, req.userId] });
+    const existingById = await db.execute({
+      sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?',
+      args: [clientPlanId, req.userId],
+    });
     if (existingById.rows[0]) {
       await db.execute({
         sql: 'UPDATE daily_plans SET start_time=?, end_time=?, duration_minutes=?, completed=? WHERE id=? AND user_id=?',
-        args: [sTime, endTime || null, dur, isComp, clientPlanId, req.userId]
+        args: [sTime, endTime || null, dur, isComp, clientPlanId, req.userId],
       });
       const updated = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [clientPlanId, req.userId] });
       return res.json(mapPlan(updated.rows[0]));
     }
   }
 
-  // If no time is set and we're adding to today's unassigned list, check if unassigned plan exists
   if (!sTime) {
     const existingResult = await db.execute({
       sql: "SELECT * FROM daily_plans WHERE task_id=? AND date=? AND user_id=? AND (start_time IS NULL OR start_time = '')",
-      args: [taskId, date, req.userId]
+      args: [taskId, date, req.userId],
     });
-    const existing = existingResult.rows[0];
-    if (existing) return res.json(mapPlan(existing));
+    if (existingResult.rows[0]) return res.json(mapPlan(existingResult.rows[0]));
   }
 
-  const maxPosResult = await db.execute({ sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
-  const maxPos = maxPosResult.rows[0].m;
-  const id = clientPlanId || (sTime ? `slot-${date}-${taskId}-${Date.now()}` : `plan-${date}-${taskId}`);
+  const maxPosResult = await db.execute({
+    sql: 'SELECT COALESCE(MAX(position), -1) as m FROM daily_plans WHERE date=? AND user_id=?',
+    args: [date, req.userId],
+  });
+  const maxPos = Number(maxPosResult.rows[0].m);
+  const defaultPrefix = sTime ? `slot-${req.userId}-${date}` : `plan-${req.userId}-${date}`;
+  const id = await resolveScopedId('daily_plans', req.userId, clientPlanId, defaultPrefix);
 
   await db.execute({
     sql: 'INSERT INTO daily_plans (id,user_id,task_id,date,position,source_type,start_time,end_time,duration_minutes,completed) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    args: [id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType, sTime, endTime || null, dur, isComp]
+    args: [id, req.userId, taskId, date, position !== undefined ? position : maxPos + 1, sourceType, sTime, endTime || null, dur, isComp],
   });
   const rowResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE id=? AND user_id=?', args: [id, req.userId] });
   res.status(201).json(mapPlan(rowResult.rows[0]));
@@ -532,7 +737,6 @@ app.put('/api/plans/:id', requireAuth, async (req, res) => {
   if (rowResult.rows[0]) {
     res.json(mapPlan(rowResult.rows[0]));
   } else {
-    // If not found, return 200 with an empty object so offline queue does not get stuck in a retry loop
     res.json({ ok: true, notFound: true, id });
   }
 });
@@ -547,17 +751,24 @@ app.put('/api/plans/reorder', requireAuth, async (req, res) => {
   const { date, orderedTaskIds } = req.body;
   if (!date || !Array.isArray(orderedTaskIds)) return res.status(400).json({ error: 'date and orderedTaskIds required' });
 
-  // Validate all taskIds are valid strings (prevent SQL injection)
-  const taskIdPattern = /^(task|plan|slot)-[a-zA-Z0-9-]+$/;
+  const idPattern = /^[a-zA-Z0-9_-]{1,128}$/;
   for (const taskId of orderedTaskIds) {
-    if (typeof taskId !== 'string' || !taskIdPattern.test(taskId)) {
+    if (typeof taskId !== 'string' || !idPattern.test(taskId)) {
       return res.status(400).json({ error: 'Invalid task ID format' });
     }
   }
 
-  const statements = orderedTaskIds.map((taskId, idx) => ({ sql: 'UPDATE daily_plans SET position=? WHERE task_id=? AND date=? AND user_id=?', args: [idx, taskId, date, req.userId] }));
-  await db.batch(statements, 'WRITE');
-  const rowsResult = await db.execute({ sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC', args: [date, req.userId] });
+  const statements = orderedTaskIds.map((taskId, idx) => ({
+    sql: 'UPDATE daily_plans SET position=? WHERE task_id=? AND date=? AND user_id=?',
+    args: [idx, taskId, date, req.userId],
+  }));
+  if (statements.length > 0) {
+    await db.batch(statements, 'write');
+  }
+  const rowsResult = await db.execute({
+    sql: 'SELECT * FROM daily_plans WHERE date=? AND user_id=? ORDER BY position ASC',
+    args: [date, req.userId],
+  });
   res.json(rowsResult.rows.map(mapPlan));
 });
 
@@ -580,64 +791,95 @@ app.get('/api/completions', requireAuth, async (req, res) => {
 app.post('/api/completions/toggle', requireAuth, async (req, res) => {
   const { taskId, date } = req.body;
   if (!taskId || !date) return res.status(400).json({ error: 'taskId and date required' });
-  const existingResult = await db.execute({ sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
+  const existingResult = await db.execute({
+    sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?',
+    args: [taskId, date, req.userId],
+  });
   const existing = existingResult.rows[0];
   let isNowCompleted;
-  const id = `comp-${date}-${taskId}`;
   if (existing) {
     isNowCompleted = !existing.completed;
     await db.execute({
-      sql: 'UPDATE completions SET completed=?,completed_at=? WHERE task_id=? AND date=? AND user_id=?',
-      args: [isNowCompleted ? 1 : 0, isNowCompleted ? nowISO() : null, taskId, date, req.userId]
+      sql: 'UPDATE completions SET completed=?,completed_at=? WHERE id=? AND user_id=?',
+      args: [isNowCompleted ? 1 : 0, isNowCompleted ? nowISO() : null, existing.id, req.userId],
     });
   } else {
-    isNowCompleted = true;
+    const id = `comp-${req.userId}-${date}-${taskId}`;
     await db.execute({
       sql: 'INSERT INTO completions (id,user_id,task_id,date,completed,completed_at) VALUES (?,?,?,?,?,?)',
-      args: [id, req.userId, taskId, date, 1, nowISO()]
+      args: [id, req.userId, taskId, date, 1, nowISO()],
     });
   }
-  const rowResult = await db.execute({ sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [taskId, date, req.userId] });
+  const rowResult = await db.execute({
+    sql: 'SELECT * FROM completions WHERE task_id=? AND date=? AND user_id=?',
+    args: [taskId, date, req.userId],
+  });
   res.json(mapCompletion(rowResult.rows[0]));
 });
 
 // ─────────────────────────────────────────
-// STATS & ANALYTICS (USER PROTECTED)
+// STATS & ANALYTICS (USER PROTECTED — BATCHED SQL)
 // ─────────────────────────────────────────
 app.get('/api/stats', requireAuth, async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error: 'date required' });
-  // Deduplicate unique tasks for the day: multiple slots of the same activity count as 1 task
-  const plansResult = await db.execute({ sql: 'SELECT DISTINCT task_id FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] });
-  const uniqueTasks = plansResult.rows;
-  const plannedCount = uniqueTasks.length;
+
+  const [plansRes, compsRes, tasksRes, catsRes] = await Promise.all([
+    db.execute({ sql: 'SELECT task_id, completed FROM daily_plans WHERE date=? AND user_id=?', args: [date, req.userId] }),
+    db.execute({ sql: 'SELECT task_id, completed FROM completions WHERE date=? AND user_id=?', args: [date, req.userId] }),
+    db.execute({ sql: 'SELECT id, category_id FROM tasks WHERE user_id=?', args: [req.userId] }),
+    db.execute({ sql: 'SELECT id, name FROM categories WHERE user_id=?', args: [req.userId] }),
+  ]);
+
+  const catNameById = new Map(catsRes.rows.map(c => [c.id, c.name]));
+  const taskCatById = new Map(tasksRes.rows.map(t => [t.id, t.category_id]));
+  const compByTask = new Map(compsRes.rows.map(c => [c.task_id, !!c.completed]));
+
+  const slotsByTask = new Map();
+  for (const row of plansRes.rows) {
+    if (!slotsByTask.has(row.task_id)) slotsByTask.set(row.task_id, []);
+    slotsByTask.get(row.task_id).push(row.completed === 1);
+  }
+
+  const plannedCount = slotsByTask.size;
   let completedCount = 0;
   const catNames = new Set();
-  for (const item of uniqueTasks) {
-    const compResult = await db.execute({ sql: 'SELECT completed FROM completions WHERE task_id=? AND date=? AND user_id=?', args: [item.task_id, date, req.userId] });
-    const comp = compResult.rows[0];
-    
-    // Check if slots are all completed
-    const slotsResult = await db.execute({ sql: 'SELECT completed FROM daily_plans WHERE task_id=? AND date=? AND user_id=?', args: [item.task_id, date, req.userId] });
-    const slots = slotsResult.rows;
-    const allSlotsCompleted = slots.length > 0 && slots.every(s => s.completed === 1);
 
-    if ((comp && comp.completed) || allSlotsCompleted) completedCount++;
-
-    const taskResult = await db.execute({ sql: 'SELECT category_id FROM tasks WHERE id=? AND user_id=?', args: [item.task_id, req.userId] });
-    const task = taskResult.rows[0];
-    if (task) {
-      const catResult = await db.execute({ sql: 'SELECT name FROM categories WHERE id=? AND user_id=?', args: [task.category_id, req.userId] });
-      const cat = catResult.rows[0];
-      if (cat) catNames.add(cat.name);
+  for (const [taskId, slots] of slotsByTask.entries()) {
+    const allSlotsCompleted = slots.length > 0 && slots.every(Boolean);
+    if (compByTask.get(taskId) || allSlotsCompleted) {
+      completedCount++;
     }
+    const catId = taskCatById.get(taskId);
+    const catName = catId ? catNameById.get(catId) : null;
+    if (catName) catNames.add(catName);
   }
+
   const percentage = plannedCount > 0 ? Math.round((completedCount / plannedCount) * 100) : 0;
   res.json({ date, plannedCount, completedCount, percentage, categoriesRepresented: [...catNames] });
 });
 
 app.get('/api/stats/streak', requireAuth, async (req, res) => {
   const today = new Date();
+  const maxDateStr = today.toISOString().split('T')[0];
+  const minD = new Date(today);
+  minD.setDate(minD.getDate() - 364);
+  const minDateStr = minD.toISOString().split('T')[0];
+
+  const [plansAgg, compsAgg] = await Promise.all([
+    db.execute({
+      sql: 'SELECT date, COUNT(DISTINCT task_id) as c FROM daily_plans WHERE user_id=? AND date>=? AND date<=? GROUP BY date',
+      args: [req.userId, minDateStr, maxDateStr],
+    }),
+    db.execute({
+      sql: 'SELECT date, COUNT(*) as c FROM completions WHERE user_id=? AND completed=1 AND date>=? AND date<=? GROUP BY date',
+      args: [req.userId, minDateStr, maxDateStr],
+    }),
+  ]);
+
+  const plannedMap = new Map(plansAgg.rows.map(r => [r.date, Number(r.c || 0)]));
+  const compMap = new Map(compsAgg.rows.map(r => [r.date, Number(r.c || 0)]));
+
   let currentStreak = 0;
   let bestStreak = 0;
   let tempStreak = 0;
@@ -649,10 +891,9 @@ app.get('/api/stats/streak', requireAuth, async (req, res) => {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
-    const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
-    const planned = Number(plannedResult.rows[0]?.c || 0);
-    const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
-    const completed = Number(compResult.rows[0]?.c || 0);
+    const planned = plannedMap.get(dateStr) || 0;
+    const completed = compMap.get(dateStr) || 0;
+
     if (planned > 0 && completed > 0) {
       tempStreak++;
       if (i === 0 || currentStreak === i) currentStreak++;
@@ -664,7 +905,7 @@ app.get('/api/stats/streak', requireAuth, async (req, res) => {
       totalPct += Math.round((completed / planned) * 100);
       activeDays++;
     }
-    if (i < 365) totalCompleted += completed;
+    totalCompleted += completed;
   }
 
   res.json({
@@ -677,53 +918,59 @@ app.get('/api/stats/streak', requireAuth, async (req, res) => {
 
 app.get('/api/stats/heatmap', requireAuth, async (req, res) => {
   const { startDate, endDate, days } = req.query;
+  const today = new Date();
+  let startD;
+  let endD;
 
   if (startDate && endDate) {
-    const result = [];
-    const curr = new Date(startDate);
-    const end = new Date(endDate);
-    while (curr <= end) {
-      const dateStr = curr.toISOString().split('T')[0];
-      const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
-      const planned = Number(plannedResult.rows[0]?.c || 0);
-      const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
-      const completed = Number(compResult.rows[0]?.c || 0);
-      const percentage = planned > 0 ? Math.round((completed / planned) * 100) : 0;
-      result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
-      curr.setDate(curr.getDate() + 1);
-    }
-    return res.json(result);
+    startD = new Date(startDate);
+    endD = new Date(endDate);
+  } else {
+    const daysCount = Math.min(730, Math.max(1, parseInt(days || '364', 10)));
+    endD = today;
+    startD = new Date(today);
+    startD.setDate(today.getDate() - (daysCount - 1));
   }
 
-  const daysCount = parseInt(days || '364', 10);
+  const startStr = startD.toISOString().split('T')[0];
+  const endStr = endD.toISOString().split('T')[0];
+
+  const [plansAgg, compsAgg] = await Promise.all([
+    db.execute({
+      sql: 'SELECT date, COUNT(DISTINCT task_id) as c FROM daily_plans WHERE user_id=? AND date>=? AND date<=? GROUP BY date',
+      args: [req.userId, startStr, endStr],
+    }),
+    db.execute({
+      sql: 'SELECT date, COUNT(*) as c FROM completions WHERE user_id=? AND completed=1 AND date>=? AND date<=? GROUP BY date',
+      args: [req.userId, startStr, endStr],
+    }),
+  ]);
+
+  const plannedMap = new Map(plansAgg.rows.map(r => [r.date, Number(r.c || 0)]));
+  const compMap = new Map(compsAgg.rows.map(r => [r.date, Number(r.c || 0)]));
+
   const result = [];
-  const today = new Date();
-  for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const plannedResult = await db.execute({ sql: 'SELECT COUNT(DISTINCT task_id) as c FROM daily_plans WHERE date=? AND user_id=?', args: [dateStr, req.userId] });
-    const planned = Number(plannedResult.rows[0]?.c || 0);
-    const compResult = await db.execute({ sql: 'SELECT COUNT(*) as c FROM completions WHERE date=? AND user_id=? AND completed=1', args: [dateStr, req.userId] });
-    const completed = Number(compResult.rows[0]?.c || 0);
+  const curr = new Date(startD);
+  while (curr <= endD) {
+    const dateStr = curr.toISOString().split('T')[0];
+    const planned = plannedMap.get(dateStr) || 0;
+    const completed = compMap.get(dateStr) || 0;
     const percentage = planned > 0 ? Math.round((completed / planned) * 100) : 0;
     result.push({ date: dateStr, plannedCount: planned, completedCount: completed, percentage });
+    curr.setDate(curr.getDate() + 1);
   }
   res.json(result);
 });
 
 app.get('/api/stats/account-start', requireAuth, async (req, res) => {
-  const taskRes = await db.execute({ sql: 'SELECT MIN(created_at) as m FROM tasks WHERE user_id=?', args: [req.userId] });
-  const catRes = await db.execute({ sql: 'SELECT MIN(created_at) as m FROM categories WHERE user_id=?', args: [req.userId] });
-  const planRes = await db.execute({ sql: 'SELECT MIN(date) as m FROM daily_plans WHERE user_id=?', args: [req.userId] });
-  const compRes = await db.execute({ sql: 'SELECT MIN(date) as m FROM completions WHERE user_id=?', args: [req.userId] });
+  const [taskRes, catRes, planRes, compRes] = await Promise.all([
+    db.execute({ sql: 'SELECT MIN(created_at) as m FROM tasks WHERE user_id=?', args: [req.userId] }),
+    db.execute({ sql: 'SELECT MIN(created_at) as m FROM categories WHERE user_id=?', args: [req.userId] }),
+    db.execute({ sql: 'SELECT MIN(date) as m FROM daily_plans WHERE user_id=?', args: [req.userId] }),
+    db.execute({ sql: 'SELECT MIN(date) as m FROM completions WHERE user_id=?', args: [req.userId] }),
+  ]);
 
-  const earliestTask = taskRes.rows[0]?.m;
-  const earliestCat = catRes.rows[0]?.m;
-  const earliestPlan = planRes.rows[0]?.m;
-  const earliestComp = compRes.rows[0]?.m;
-
-  let earliest = [earliestTask, earliestCat, earliestPlan, earliestComp]
+  let earliest = [taskRes.rows[0]?.m, catRes.rows[0]?.m, planRes.rows[0]?.m, compRes.rows[0]?.m]
     .filter(Boolean)
     .map(d => String(d).split('T')[0])
     .sort()[0];
@@ -736,16 +983,18 @@ app.get('/api/stats/account-start', requireAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// EXPORT / IMPORT / RESET (USER PROTECTED)
+// EXPORT / IMPORT / MERGE / RESET (USER PROTECTED)
 // ─────────────────────────────────────────
 app.get('/api/export', requireAuth, async (req, res) => {
   try {
-    const [catsRes, tasksRes, recRes, plansRes, compRes] = await Promise.all([
+    const [catsRes, tasksRes, recRes, subtasksRes, plansRes, compRes, settingsRes] = await Promise.all([
       db.execute({ sql: 'SELECT * FROM categories WHERE user_id=?', args: [req.userId] }),
       db.execute({ sql: 'SELECT * FROM tasks WHERE user_id=?', args: [req.userId] }),
       db.execute({ sql: 'SELECT * FROM recurrence_rules WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT * FROM subtasks WHERE user_id=? ORDER BY position ASC', args: [req.userId] }),
       db.execute({ sql: 'SELECT * FROM daily_plans WHERE user_id=?', args: [req.userId] }),
       db.execute({ sql: 'SELECT * FROM completions WHERE user_id=?', args: [req.userId] }),
+      db.execute({ sql: 'SELECT gym_schedule, study_books FROM user_settings WHERE user_id=?', args: [req.userId] }),
     ]);
 
     const recMap = new Map();
@@ -753,13 +1002,26 @@ app.get('/api/export', requireAuth, async (req, res) => {
       recMap.set(r.task_id, r);
     }
 
-    const tasksWithRec = tasksRes.rows.map(t => mapTask(t, recMap.get(t.id)));
+    const subtasksMap = new Map();
+    for (const s of subtasksRes.rows) {
+      if (!subtasksMap.has(s.task_id)) subtasksMap.set(s.task_id, []);
+      subtasksMap.get(s.task_id).push(mapSubtask(s));
+    }
 
+    const tasksWithNested = tasksRes.rows.map(t => {
+      const mapped = mapTask(t, recMap.get(t.id));
+      mapped.subtasks = subtasksMap.get(t.id) || [];
+      return mapped;
+    });
+
+    const settingsRow = settingsRes.rows[0];
     const data = {
       categories: catsRes.rows.map(mapCategory),
-      tasks: tasksWithRec,
+      tasks: tasksWithNested,
       dailyPlans: plansRes.rows.map(mapPlan),
       completions: compRes.rows.map(mapCompletion),
+      gymSchedule: settingsRow?.gym_schedule ? JSON.parse(settingsRow.gym_schedule) : null,
+      studyBooks: settingsRow?.study_books ? JSON.parse(settingsRow.study_books) : null,
       exportedAt: nowISO(),
     };
     res.setHeader('Content-Disposition', `attachment; filename=bromise_backup_${new Date().toISOString().split('T')[0]}.json`);
@@ -770,124 +1032,276 @@ app.get('/api/export', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/import', requireAuth, async (req, res) => {
-  const { categories, tasks, dailyPlans, completions, gymSchedule, studyBooks } = req.body;
-  if (!categories || !tasks || !Array.isArray(categories) || !Array.isArray(tasks)) {
-    return res.status(400).json({ error: 'Invalid backup file: categories and tasks arrays are required' });
+/**
+ * Shared atomic import / merge builder with cross-account PK collision remapping.
+ * mode: 'replace' (full backup restore) | 'merge' (guest or offline data merge)
+ */
+async function executeScopedImportOrMerge(userId, body, mode) {
+  const categories = Array.isArray(body.categories) ? body.categories : [];
+  const tasks = Array.isArray(body.tasks) ? body.tasks : [];
+  const dailyPlans = Array.isArray(body.dailyPlans) ? body.dailyPlans : (Array.isArray(body.daily_plans) ? body.daily_plans : []);
+  const completions = Array.isArray(body.completions) ? body.completions : [];
+  const gymSchedule = body.gymSchedule || body.gym_schedule || null;
+  const studyBooks = body.studyBooks || body.study_books || null;
+
+  const now = nowISO();
+  const incomingSubtasks = [];
+  for (const t of tasks) {
+    if (Array.isArray(t.subtasks)) {
+      for (const s of t.subtasks) {
+        if (s && s.id) incomingSubtasks.push(s.id);
+      }
+    }
   }
 
-  try {
-    const statements = [
-      { sql: 'DELETE FROM completions WHERE user_id = ?', args: [req.userId] },
-      { sql: 'DELETE FROM daily_plans WHERE user_id = ?', args: [req.userId] },
-      { sql: 'DELETE FROM recurrence_rules WHERE user_id = ?', args: [req.userId] },
-      { sql: 'DELETE FROM tasks WHERE user_id = ?', args: [req.userId] },
-      { sql: 'DELETE FROM categories WHERE user_id = ?', args: [req.userId] },
-    ];
+  const [
+    otherCatIds,
+    otherTaskIds,
+    otherRecIds,
+    otherSubIds,
+    otherPlanIds,
+    otherCompIds,
+    myCatsRes,
+    myTasksRes,
+    myRecsRes,
+    mySubsRes,
+    myPlansRes,
+    myCompsRes,
+  ] = await Promise.all([
+    findOtherUserOwnedIds('categories', categories.map(c => c.id), userId),
+    findOtherUserOwnedIds('tasks', tasks.map(t => t.id), userId),
+    findOtherUserOwnedIds('recurrence_rules', tasks.map(t => t.recurrenceRule?.id), userId),
+    findOtherUserOwnedIds('subtasks', incomingSubtasks, userId),
+    findOtherUserOwnedIds('daily_plans', dailyPlans.map(p => p.id), userId),
+    findOtherUserOwnedIds('completions', completions.map(c => c.id), userId),
+    db.execute({ sql: 'SELECT id, name FROM categories WHERE user_id=?', args: [userId] }),
+    db.execute({ sql: 'SELECT id FROM tasks WHERE user_id=?', args: [userId] }),
+    db.execute({ sql: 'SELECT task_id FROM recurrence_rules WHERE user_id=?', args: [userId] }),
+    db.execute({ sql: 'SELECT id FROM subtasks WHERE user_id=?', args: [userId] }),
+    db.execute({ sql: 'SELECT id, task_id, date, start_time FROM daily_plans WHERE user_id=?', args: [userId] }),
+    db.execute({ sql: 'SELECT id, task_id, date FROM completions WHERE user_id=?', args: [userId] }),
+  ]);
 
-    const categoryIds = new Set();
-    const now = nowISO();
+  const statements = [];
+  if (mode === 'replace') {
+    statements.push(
+      { sql: 'DELETE FROM subtasks WHERE user_id = ?', args: [userId] },
+      { sql: 'DELETE FROM completions WHERE user_id = ?', args: [userId] },
+      { sql: 'DELETE FROM daily_plans WHERE user_id = ?', args: [userId] },
+      { sql: 'DELETE FROM recurrence_rules WHERE user_id = ?', args: [userId] },
+      { sql: 'DELETE FROM tasks WHERE user_id = ?', args: [userId] },
+      { sql: 'DELETE FROM categories WHERE user_id = ?', args: [userId] }
+    );
+  }
 
-    for (let i = 0; i < categories.length; i++) {
-      const c = categories[i];
-      const catId = c.id || `cat-${uid()}`;
-      categoryIds.add(catId);
-      const catName = c.name || `Category ${i + 1}`;
-      const catIcon = c.icon || 'Sparkles';
-      const catAccent = c.accent || '#8b5cf6';
-      const catPos = Number.isInteger(c.position) ? c.position : i;
-      const catCreated = c.createdAt || now;
-      const catUpdated = c.updatedAt || catCreated;
-      const archived = (c.archived || c.archivedAt) ? 1 : 0;
+  const myCatIds = mode === 'merge' ? new Set(myCatsRes.rows.map(r => r.id)) : new Set();
+  const myCatByName = mode === 'merge'
+    ? new Map(myCatsRes.rows.map(r => [String(r.name).trim().toLowerCase(), r.id]))
+    : new Map();
+  const myTaskIds = mode === 'merge' ? new Set(myTasksRes.rows.map(r => r.id)) : new Set();
+  const myRecTaskIds = mode === 'merge' ? new Set(myRecsRes.rows.map(r => r.task_id)) : new Set();
+  const mySubIds = mode === 'merge' ? new Set(mySubsRes.rows.map(r => r.id)) : new Set();
+  const myPlanSig = mode === 'merge'
+    ? new Set(myPlansRes.rows.map(r => `${r.task_id}::${r.date}::${r.start_time || ''}`))
+    : new Set();
+  const myCompSig = mode === 'merge'
+    ? new Set(myCompsRes.rows.map(r => `${r.task_id}::${r.date}`))
+    : new Set();
+
+  const catIdMap = new Map();
+  const seenCatIds = new Set();
+  let insertedCategories = 0;
+
+  for (let i = 0; i < categories.length; i++) {
+    const c = categories[i];
+    if (!c) continue;
+    const rawId = c.id || `cat-${uid()}`;
+    const catName = c.name || `Category ${i + 1}`;
+    const normName = String(catName).trim().toLowerCase();
+
+    if (mode === 'merge') {
+      if (myCatIds.has(rawId)) {
+        catIdMap.set(rawId, rawId);
+        continue;
+      }
+      if (myCatByName.has(normName)) {
+        catIdMap.set(rawId, myCatByName.get(normName));
+        continue;
+      }
+    }
+
+    let finalCatId = (!c.id || otherCatIds.has(c.id) || seenCatIds.has(c.id))
+      ? `cat-${uid()}`
+      : c.id;
+    seenCatIds.add(finalCatId);
+    catIdMap.set(rawId, finalCatId);
+
+    const catIcon = c.icon || 'Sparkles';
+    const catAccent = c.accent || '#8b5cf6';
+    const catPos = Number.isInteger(c.position) ? c.position : (myCatIds.size + insertedCategories);
+    const catCreated = c.createdAt || now;
+    const catUpdated = c.updatedAt || catCreated;
+    const archived = (c.archived || c.archivedAt) ? 1 : 0;
+
+    statements.push({
+      sql: 'INSERT INTO categories (id, user_id, name, icon, accent, position, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [finalCatId, userId, catName, catIcon, catAccent, catPos, catCreated, catUpdated, archived],
+    });
+    insertedCategories++;
+  }
+
+  const fallbackCategoryId =
+    catIdMap.values().next().value ||
+    myCatsRes.rows[0]?.id ||
+    null;
+
+  const taskIdMap = new Map();
+  const seenTaskIds = new Set();
+  const seenSubIds = new Set();
+  let insertedTasks = 0;
+
+  for (const t of tasks) {
+    if (!t) continue;
+    const rawTaskId = t.id || `task-${uid()}`;
+    const mappedCatId = catIdMap.get(t.categoryId) || (myCatIds.has(t.categoryId) ? t.categoryId : fallbackCategoryId);
+    if (!mappedCatId) continue;
+
+    if (mode === 'merge' && myTaskIds.has(rawTaskId)) {
+      taskIdMap.set(rawTaskId, rawTaskId);
+      continue;
+    }
+
+    const finalTaskId = (!t.id || otherTaskIds.has(t.id) || seenTaskIds.has(t.id))
+      ? `task-${uid()}`
+      : t.id;
+    seenTaskIds.add(finalTaskId);
+    taskIdMap.set(rawTaskId, finalTaskId);
+
+    const title = t.title || 'Untitled Task';
+    const notes = t.notes || null;
+    const priority = (t.priority && ['low', 'medium', 'high'].includes(String(t.priority).toLowerCase()))
+      ? String(t.priority).toLowerCase()
+      : 'medium';
+    const deadline = t.deadline || null;
+    const isRecurring = t.isRecurring ? 1 : 0;
+    const createdAt = t.createdAt || now;
+    const updatedAt = t.updatedAt || createdAt;
+    const archived = (t.archivedAt || t.archived) ? 1 : 0;
+
+    statements.push({
+      sql: 'INSERT INTO tasks (id, user_id, category_id, title, notes, priority, deadline, is_recurring, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [finalTaskId, userId, mappedCatId, title, notes, priority, deadline, isRecurring, createdAt, updatedAt, archived],
+    });
+    insertedTasks++;
+
+    if (t.recurrenceRule && isRecurring && !myRecTaskIds.has(finalTaskId)) {
+      const rr = t.recurrenceRule;
+      const finalRrId = (!rr.id || otherRecIds.has(rr.id)) ? `rec-${uid()}` : rr.id;
+      const rrFreq = rr.frequency || 'daily';
+      const rrStart = rr.startDate || createdAt.split('T')[0];
+      const rrEnd = rr.endDate || null;
+      const rrActive = rr.active !== false ? 1 : 0;
 
       statements.push({
-        sql: 'INSERT INTO categories (id, user_id, name, icon, accent, position, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [catId, req.userId, catName, catIcon, catAccent, catPos, catCreated, catUpdated, archived]
+        sql: 'INSERT OR IGNORE INTO recurrence_rules (id, user_id, task_id, frequency, start_date, end_date, active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        args: [finalRrId, userId, finalTaskId, rrFreq, rrStart, rrEnd, rrActive],
       });
     }
 
-    const fallbackCategoryId = categories[0]?.id || (categoryIds.size > 0 ? Array.from(categoryIds)[0] : null);
-
-    for (const t of tasks) {
-      const taskId = t.id || `task-${uid()}`;
-      const catId = (t.categoryId && categoryIds.has(t.categoryId)) ? t.categoryId : fallbackCategoryId;
-      const title = t.title || 'Untitled Task';
-      const notes = t.notes || null;
-      const priority = (t.priority && ['low', 'medium', 'high'].includes(String(t.priority).toLowerCase()))
-        ? String(t.priority).toLowerCase()
-        : 'medium';
-      const deadline = t.deadline || null;
-      const isRecurring = t.isRecurring ? 1 : 0;
-      const createdAt = t.createdAt || now;
-      const updatedAt = t.updatedAt || createdAt;
-      const archived = (t.archivedAt || t.archived) ? 1 : 0;
-
-      statements.push({
-        sql: 'INSERT INTO tasks (id, user_id, category_id, title, notes, priority, deadline, is_recurring, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [taskId, req.userId, catId, title, notes, priority, deadline, isRecurring, createdAt, updatedAt, archived]
-      });
-
-      if (t.recurrenceRule && isRecurring) {
-        const rr = t.recurrenceRule;
-        const rrId = rr.id || `rec-${uid()}`;
-        const rrFreq = rr.frequency || 'daily';
-        const rrStart = rr.startDate || createdAt.split('T')[0];
-        const rrEnd = rr.endDate || null;
-        const rrActive = rr.active !== false ? 1 : 0;
-
+    if (Array.isArray(t.subtasks)) {
+      for (let sIdx = 0; sIdx < t.subtasks.length; sIdx++) {
+        const s = t.subtasks[sIdx];
+        if (!s || !s.title) continue;
+        if (mode === 'merge' && s.id && mySubIds.has(s.id)) continue;
+        const finalSubId = (!s.id || otherSubIds.has(s.id) || seenSubIds.has(s.id)) ? `sub-${uid()}` : s.id;
+        seenSubIds.add(finalSubId);
         statements.push({
-          sql: 'INSERT OR IGNORE INTO recurrence_rules (id, user_id, task_id, frequency, start_date, end_date, active) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          args: [rrId, req.userId, taskId, rrFreq, rrStart, rrEnd, rrActive]
+          sql: 'INSERT OR IGNORE INTO subtasks (id, task_id, user_id, title, done, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          args: [finalSubId, finalTaskId, userId, String(s.title), s.done ? 1 : 0, Number.isInteger(s.position) ? s.position : sIdx, s.createdAt || now],
         });
       }
     }
+  }
 
-    if (Array.isArray(dailyPlans)) {
-      for (let i = 0; i < dailyPlans.length; i++) {
-        const p = dailyPlans[i];
-        if (!p.taskId) continue;
-        const planDate = p.date || now.split('T')[0];
-        const planId = p.id || `plan-${planDate}-${p.taskId}`;
-        const planPos = Number.isInteger(p.position) ? p.position : i;
-        const planSrc = p.sourceType || 'normal';
-        const planStart = p.startTime || null;
-        const planEnd = p.endTime || null;
-        const planDur = Number.isInteger(p.durationMinutes) ? p.durationMinutes : null;
-        const planComp = p.completed ? 1 : 0;
+  const seenPlanIds = new Set();
+  for (let i = 0; i < dailyPlans.length; i++) {
+    const p = dailyPlans[i];
+    if (!p || !p.taskId) continue;
+    const mappedTaskId = taskIdMap.get(p.taskId) || (myTaskIds.has(p.taskId) ? p.taskId : null);
+    if (!mappedTaskId) continue;
 
-        statements.push({
-          sql: 'INSERT OR IGNORE INTO daily_plans (id, user_id, task_id, date, position, source_type, start_time, end_time, duration_minutes, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          args: [planId, req.userId, p.taskId, planDate, planPos, planSrc, planStart, planEnd, planDur, planComp]
-        });
-      }
-    }
+    const planDate = p.date || now.split('T')[0];
+    const planStart = p.startTime || p.timeSlot || null;
+    const sig = `${mappedTaskId}::${planDate}::${planStart || ''}`;
+    if (mode === 'merge' && myPlanSig.has(sig)) continue;
+    myPlanSig.add(sig);
 
-    if (Array.isArray(completions)) {
-      for (const c of completions) {
-        if (!c.taskId) continue;
-        const compDate = c.date || now.split('T')[0];
-        const compId = c.id || `comp-${compDate}-${c.taskId}`;
-        const compCompleted = c.completed !== false ? 1 : 0;
-        const compAt = c.completedAt || (compCompleted ? now : null);
+    let finalPlanId = (!p.id || otherPlanIds.has(p.id) || seenPlanIds.has(p.id))
+      ? `plan-${userId}-${planDate}-${uid().slice(0, 8)}`
+      : p.id;
+    seenPlanIds.add(finalPlanId);
 
-        statements.push({
-          sql: 'INSERT OR IGNORE INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, ?, ?)',
-          args: [compId, req.userId, c.taskId, compDate, compCompleted, compAt]
-        });
-      }
-    }
+    const planPos = Number.isInteger(p.position) ? p.position : i;
+    const planSrc = p.sourceType || 'normal';
+    const planEnd = p.endTime || null;
+    const planDur = Number.isInteger(p.durationMinutes) ? p.durationMinutes : null;
+    const planComp = p.completed ? 1 : 0;
 
-    // Execute atomic transaction batch
+    statements.push({
+      sql: 'INSERT OR IGNORE INTO daily_plans (id, user_id, task_id, date, position, source_type, start_time, end_time, duration_minutes, completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [finalPlanId, userId, mappedTaskId, planDate, planPos, planSrc, planStart, planEnd, planDur, planComp],
+    });
+  }
+
+  const seenCompIds = new Set();
+  for (const c of completions) {
+    if (!c || !c.taskId) continue;
+    const mappedTaskId = taskIdMap.get(c.taskId) || (myTaskIds.has(c.taskId) ? c.taskId : null);
+    if (!mappedTaskId) continue;
+
+    const compDate = c.date || now.split('T')[0];
+    const sig = `${mappedTaskId}::${compDate}`;
+    if (mode === 'merge' && myCompSig.has(sig)) continue;
+    myCompSig.add(sig);
+
+    const finalCompId = (!c.id || otherCompIds.has(c.id) || seenCompIds.has(c.id))
+      ? `comp-${userId}-${compDate}-${mappedTaskId}`
+      : c.id;
+    seenCompIds.add(finalCompId);
+
+    const compCompleted = c.completed !== false ? 1 : 0;
+    const compAt = c.completedAt || (compCompleted ? now : null);
+
+    statements.push({
+      sql: 'INSERT OR IGNORE INTO completions (id, user_id, task_id, date, completed, completed_at) VALUES (?, ?, ?, ?, ?, ?)',
+      args: [finalCompId, userId, mappedTaskId, compDate, compCompleted, compAt],
+    });
+  }
+
+  if (statements.length > 0) {
     await db.batch(statements, 'write');
+  }
 
-    // Also persist gymSchedule and studyBooks if included in backup
-    if (gymSchedule || studyBooks) {
-      const existingSettings = await db.execute({
-        sql: 'SELECT gym_schedule, study_books FROM user_settings WHERE user_id = ?',
-        args: [req.userId]
-      });
-      const gymStr = gymSchedule ? JSON.stringify(gymSchedule) : (existingSettings.rows[0]?.gym_schedule || null);
-      const studyStr = studyBooks ? JSON.stringify(studyBooks) : (existingSettings.rows[0]?.study_books || null);
+  if (gymSchedule || studyBooks) {
+    const existingSettings = await db.execute({
+      sql: 'SELECT gym_schedule, study_books FROM user_settings WHERE user_id = ?',
+      args: [userId],
+    });
+    const curRow = existingSettings.rows[0];
+    let gymStr = curRow?.gym_schedule || null;
+    let studyStr = curRow?.study_books || null;
+
+    if (mode === 'replace') {
+      if (gymSchedule) gymStr = JSON.stringify(gymSchedule);
+      if (studyBooks) studyStr = JSON.stringify(studyBooks);
+    } else {
+      if (!gymStr && gymSchedule) gymStr = JSON.stringify(gymSchedule);
+      if ((!studyStr || studyStr === '[]') && studyBooks && Array.isArray(studyBooks) && studyBooks.length > 0) {
+        studyStr = JSON.stringify(studyBooks);
+      }
+    }
+
+    if (gymStr !== (curRow?.gym_schedule || null) || studyStr !== (curRow?.study_books || null)) {
       await db.execute({
         sql: `INSERT INTO user_settings (user_id, gym_schedule, study_books, updated_at)
               VALUES (?, ?, ?, ?)
@@ -895,14 +1309,39 @@ app.post('/api/import', requireAuth, async (req, res) => {
                 gym_schedule = COALESCE(excluded.gym_schedule, user_settings.gym_schedule),
                 study_books = COALESCE(excluded.study_books, user_settings.study_books),
                 updated_at = excluded.updated_at`,
-        args: [req.userId, gymStr, studyStr, now]
+        args: [userId, gymStr, studyStr, now],
       });
     }
+  }
 
-    res.json({ ok: true, count: { categories: categories.length, tasks: tasks.length } });
+  return {
+    categories: mode === 'replace' ? categories.length : insertedCategories,
+    tasks: mode === 'replace' ? tasks.length : insertedTasks,
+  };
+}
+
+app.post('/api/import', requireAuth, async (req, res) => {
+  const { categories, tasks } = req.body;
+  if (!categories || !tasks || !Array.isArray(categories) || !Array.isArray(tasks)) {
+    return res.status(400).json({ error: 'Invalid backup file: categories and tasks arrays are required' });
+  }
+
+  try {
+    const count = await executeScopedImportOrMerge(req.userId, req.body, 'replace');
+    res.json({ ok: true, count });
   } catch (e) {
     console.error('Import failed:', e);
     res.status(500).json({ error: e.message || 'Import failed' });
+  }
+});
+
+app.post('/api/sync/merge', requireAuth, async (req, res) => {
+  try {
+    const count = await executeScopedImportOrMerge(req.userId, req.body || {}, 'merge');
+    res.json({ ok: true, merged: count });
+  } catch (e) {
+    console.error('Sync merge failed:', e);
+    res.status(500).json({ error: e.message || 'Merge failed' });
   }
 });
 
@@ -977,5 +1416,7 @@ if (!process.env.VERCEL) {
     console.log(`BROMISE server running on port ${PORT} (${IS_PROD ? 'production' : 'development'})`);
   });
 }
+
+app.ensureReady = db.ensureReady;
 
 module.exports = app;

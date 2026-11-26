@@ -898,3 +898,67 @@ export function cleanPrefilledTasks(): number {
 
   return removedCount;
 }
+
+// ─────────────────────────────────────────────────────────────
+// GUEST DATA SNAPSHOT & MERGE HELPERS
+// Reads raw bromise_guest_* keys created prior to Google sign-in
+// ─────────────────────────────────────────────────────────────
+export interface GuestSnapshot {
+  categories: Category[];
+  tasks: Task[];
+  dailyPlans: DailyPlanItem[];
+  completions: TaskCompletion[];
+  gymSchedule: GymSchedule | null;
+  studyBooks: StudyBook[];
+  hasData: boolean;
+}
+
+function readGuestJSON<T>(subKey: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`bromise_guest_${subKey}`);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function getGuestSnapshot(): GuestSnapshot {
+  const categories = readGuestJSON<Category[]>('categories', []);
+  const tasks = readGuestJSON<Task[]>('tasks', []);
+  const dailyPlans = readGuestJSON<DailyPlanItem[]>('daily_plans', []);
+  const completions = readGuestJSON<TaskCompletion[]>('completions', []);
+  const gymSchedule = readGuestJSON<GymSchedule | null>('gym_schedule', null);
+  const studyBooks = readGuestJSON<StudyBook[]>('study_books', []);
+
+  const hasData =
+    categories.length > 0 ||
+    tasks.length > 0 ||
+    dailyPlans.length > 0 ||
+    completions.length > 0 ||
+    gymSchedule !== null ||
+    studyBooks.length > 0;
+
+  return {
+    categories,
+    tasks,
+    dailyPlans,
+    completions,
+    gymSchedule,
+    studyBooks,
+    hasData,
+  };
+}
+
+export function clearGuestData() {
+  const guestKeys = [
+    'categories',
+    'tasks',
+    'daily_plans',
+    'completions',
+    'sync_queue',
+    'account_created',
+    'gym_schedule',
+    'study_books',
+  ];
+  guestKeys.forEach(k => localStorage.removeItem(`bromise_guest_${k}`));
+}

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api, getStoredToken, setStoredToken } from '../services/api';
 import { setActiveUser } from '../utils/storage';
-import { clearSyncState } from '../services/syncAdapter';
+import { clearSyncState, flushSyncQueue } from '../services/syncAdapter';
 
 export interface User {
   id: string;
@@ -33,7 +33,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   loginWithGoogle: (credential: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,7 +98,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Attempt to flush any queued offline writes to Turso before clearing the user's JWT
+    try {
+      await flushSyncQueue();
+    } catch {
+      // Proceed cleanly even if offline; queue remains safely isolated under bromise_user_<id>_sync_queue
+    }
     clearSyncState();
     setActiveUser(null);
     setStoredToken(null);

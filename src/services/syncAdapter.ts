@@ -36,6 +36,7 @@ import {
   exportDataJSON, importDataJSON, resetToSeedData,
   isTaskCompletedOnDate, formatDateKey, getKey, getActiveUserId,
   getGymSchedule, saveGymSchedule, getStudyBooks, saveStudyBooks,
+  getGuestSnapshot, clearGuestData,
 } from '../utils/storage';
 import type { Category, Task, DailyPlanItem, TaskCompletion, GymSchedule, StudyBook } from '../types';
 
@@ -45,6 +46,7 @@ import type { Category, Task, DailyPlanItem, TaskCompletion, GymSchedule, StudyB
 
 const SERVER_CHECK_INTERVAL = 15_000; // ms
 let _serverOnline = false;
+let _isPulling = false;
 export let _initialSyncDone = false;
 
 export function isServerOnline(): boolean {
@@ -53,8 +55,8 @@ export function isServerOnline(): boolean {
 
 async function checkServerHealth(): Promise<boolean> {
   try {
-    await api.health();
-    return true;
+    const res = await api.health();
+    return res?.status === 'ok';
   } catch {
     return false;
   }
@@ -69,6 +71,7 @@ interface SyncOp {
   type: string;
   payload: any;
   createdAt: string;
+  retries?: number;
 }
 
 function getQueue(): SyncOp[] {
@@ -83,6 +86,17 @@ function saveQueue(queue: SyncOp[]) {
   localStorage.setItem(getKey('sync_queue'), JSON.stringify(queue));
 }
 
+function recordDeadLetterOp(op: SyncOp, reason: string) {
+  try {
+    const dlqKey = getKey('sync_dead_letter');
+    const existing = JSON.parse(localStorage.getItem(dlqKey) || '[]');
+    existing.push({ ...op, failedAt: new Date().toISOString(), reason });
+    localStorage.setItem(dlqKey, JSON.stringify(existing.slice(-50)));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
 function enqueue(type: string, payload: any) {
   const queue = getQueue();
   queue.push({
@@ -90,6 +104,7 @@ function enqueue(type: string, payload: any) {
     type,
     payload,
     createdAt: new Date().toISOString(),
+    retries: 0,
   });
   saveQueue(queue);
 }
@@ -102,6 +117,10 @@ export function clearQueue() {
   saveQueue([]);
 }
 
+export function getPendingSyncCount(): number {
+  return getQueue().length;
+}
+
 async function drainQueue() {
   const queue = getQueue();
   if (queue.length === 0) return;
@@ -111,15 +130,44 @@ async function drainQueue() {
       await executeOp(op);
       dequeue(op.id);
     } catch (err: any) {
-      // If resource was already deleted or not found (404), remove from queue
-      if (err?.message?.includes('404')) {
-        console.warn(`[sync] Resource not found on server for op ${op.type}, discarding:`, err.message);
+      const msg = String(err?.message || '');
+      const is404 = msg.includes('→ 404');
+      const isPermanent4xx = /→ 40[0349]|→ 422/.test(msg);
+
+      if (is404 || isPermanent4xx) {
+        console.warn(`[sync] Permanent client error for op ${op.type}, quarantining:`, msg);
+        recordDeadLetterOp(op, msg);
         dequeue(op.id);
         continue;
       }
-      // Otherwise stop draining — server may have gone down again
+
+      // Update retry count for transient errors
+      const nextRetries = (op.retries || 0) + 1;
+      if (nextRetries >= 8) {
+        console.error(`[sync] Max retries reached for op ${op.type}, quarantining:`, msg);
+        recordDeadLetterOp(op, msg);
+        dequeue(op.id);
+        continue;
+      }
+
+      const currentQueue = getQueue().map(item =>
+        item.id === op.id ? { ...item, retries: nextRetries } : item
+      );
+      saveQueue(currentQueue);
+      // Stop draining — server or network may be temporarily down
       break;
     }
+  }
+}
+
+export async function flushSyncQueue(): Promise<boolean> {
+  if (!getActiveUserId()) return true;
+  if (getQueue().length === 0) return true;
+  try {
+    await drainQueue();
+    return getQueue().length === 0;
+  } catch {
+    return false;
   }
 }
 
@@ -175,8 +223,30 @@ async function executeOp(op: SyncOp) {
     }
     case 'TOGGLE_COMPLETION': await api.toggleCompletion(p.taskId, p.date); break;
     case 'IMPORT_DATA':     await api.importData(p); break;
+    case 'MERGE_DATA':      await api.mergeData(p); break;
     case 'SYNC_ROOMS':      await api.saveUserRooms(p); break;
     default: console.warn('[sync] Unknown op type:', op.type);
+  }
+}
+
+async function mergeGuestDataIntoActiveAccount() {
+  if (!getActiveUserId()) return;
+  const guest = getGuestSnapshot();
+  if (!guest.hasData) return;
+
+  try {
+    await api.mergeData({
+      categories: guest.categories,
+      tasks: guest.tasks,
+      dailyPlans: guest.dailyPlans,
+      completions: guest.completions,
+      gymSchedule: guest.gymSchedule,
+      studyBooks: guest.studyBooks,
+    });
+    clearGuestData();
+    console.info('[sync] Merged guest session data into signed-in Google account.');
+  } catch (err) {
+    console.warn('[sync] Failed to merge guest data on startup; will retry later:', err);
   }
 }
 
@@ -187,6 +257,8 @@ async function executeOp(op: SyncOp) {
 // ─────────────────────────────────────────────────────────
 
 export async function pullFromServer() {
+  await mergeGuestDataIntoActiveAccount();
+
   const hasPending = getQueue().length > 0;
   if (hasPending) {
     // Drain pending writes first before pulling
@@ -211,7 +283,7 @@ export async function pullFromServer() {
     const localTasks = getTasks();
     if (cats.length === 0 && tasks.length === 0 && (localCats.length > 0 || localTasks.length > 0)) {
       console.warn('[sync] Server returned 0 items while local has data. Preserving local data and syncing to server.');
-      api.importData({
+      await api.importData({
         categories: localCats,
         tasks: localTasks,
         dailyPlans: getDailyPlans(),
@@ -222,29 +294,34 @@ export async function pullFromServer() {
       return;
     }
 
-    // Overwrite LocalStorage with fresh server data
-    saveCategories(cats);
-    saveTasks(tasks);
-    saveDailyPlans(plans);
-    saveCompletions(completions);
+    // Overwrite LocalStorage with fresh server data (suppress echo room sync events)
+    _isPulling = true;
+    try {
+      saveCategories(cats);
+      saveTasks(tasks);
+      saveDailyPlans(plans);
+      saveCompletions(completions);
 
-    // Sync room data if present on server, or upload initial local rooms
-    if (userRooms?.gymSchedule) {
-      saveGymSchedule(userRooms.gymSchedule);
-    } else {
-      const localGym = getGymSchedule();
-      if (localGym) {
-        api.saveUserRooms({ gymSchedule: localGym }).catch(() => {});
+      // Sync room data if present on server, or upload initial local rooms
+      if (userRooms?.gymSchedule) {
+        saveGymSchedule(userRooms.gymSchedule);
+      } else {
+        const localGym = getGymSchedule();
+        if (localGym) {
+          api.saveUserRooms({ gymSchedule: localGym }).catch(() => {});
+        }
       }
-    }
 
-    if (userRooms?.studyBooks && Array.isArray(userRooms.studyBooks) && userRooms.studyBooks.length > 0) {
-      saveStudyBooks(userRooms.studyBooks);
-    } else {
-      const localBooks = getStudyBooks();
-      if (localBooks && localBooks.length > 0) {
-        api.saveUserRooms({ studyBooks: localBooks }).catch(() => {});
+      if (userRooms?.studyBooks && Array.isArray(userRooms.studyBooks) && userRooms.studyBooks.length > 0) {
+        saveStudyBooks(userRooms.studyBooks);
+      } else {
+        const localBooks = getStudyBooks();
+        if (localBooks && localBooks.length > 0) {
+          api.saveUserRooms({ studyBooks: localBooks }).catch(() => {});
+        }
       }
+    } finally {
+      _isPulling = false;
     }
 
     _initialSyncDone = true;
@@ -526,14 +603,14 @@ export async function syncSaveStudyBooks(books: StudyBook[]): Promise<void> {
 // Automatic room change listener so any local room updates sync seamlessly
 if (typeof window !== 'undefined') {
   window.addEventListener('bromise-gym-change', () => {
-    if (getActiveUserId()) {
+    if (!_isPulling && getActiveUserId()) {
       const gym = getGymSchedule();
       trySync(() => {}, 'SYNC_ROOMS', { gymSchedule: gym });
     }
   });
 
   window.addEventListener('bromise-study-change', () => {
-    if (getActiveUserId()) {
+    if (!_isPulling && getActiveUserId()) {
       const books = getStudyBooks();
       trySync(() => {}, 'SYNC_ROOMS', { studyBooks: books });
     }

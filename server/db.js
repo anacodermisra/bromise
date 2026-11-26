@@ -4,7 +4,10 @@ const path = require('path');
 const { createClient } = require('@libsql/client');
 require('dotenv').config();
 
-const dbUrl = process.env.TURSO_DATABASE_URL || (process.env.VERCEL ? 'file:/tmp/bromise.db' : 'file:./data/bromise.db');
+const isVercel = Boolean(process.env.VERCEL);
+const hasTursoUrl = Boolean(process.env.TURSO_DATABASE_URL);
+const dbUrl = process.env.TURSO_DATABASE_URL || (isVercel ? 'file:/tmp/bromise.db' : 'file:./data/bromise.db');
+
 if (dbUrl.startsWith('file:')) {
   const filePath = dbUrl.replace(/^file:/, '');
   const dir = path.dirname(filePath);
@@ -20,7 +23,16 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
+function isPersistentCloudDb() {
+  if (isVercel) return hasTursoUrl;
+  return true;
+}
+
 async function initDB() {
+  if (isVercel && !hasTursoUrl) {
+    throw new Error('TURSO_DATABASE_URL is not configured on Vercel. Persistent storage requires a Turso LibSQL database URL.');
+  }
+
   await db.executeMultiple(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -96,6 +108,7 @@ async function initDB() {
       created_at TEXT NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
+
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       gym_schedule TEXT,
@@ -105,7 +118,7 @@ async function initDB() {
   `);
 
   // Safe migrations to add user_id column if upgrading existing local DB
-  const tables = ['categories', 'tasks', 'recurrence_rules', 'daily_plans', 'completions'];
+  const tables = ['categories', 'tasks', 'recurrence_rules', 'daily_plans', 'completions', 'subtasks'];
   for (const table of tables) {
     try {
       const res = await db.execute(`PRAGMA table_info(${table})`);
@@ -147,13 +160,28 @@ async function initDB() {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_completions_task_date ON completions(task_id, date)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_recurrence_task ON recurrence_rules(task_id, user_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_subtasks_task ON subtasks(task_id, user_id)');
-    console.log('✓ Database indexes created successfully');
   } catch (err) {
     console.log('Index creation check:', err.message);
   }
 }
 
-// We let it run in background on startup
-initDB().catch(err => console.error('DB Init Error:', err));
+let readyPromise = null;
+function ensureReady() {
+  if (!readyPromise) {
+    readyPromise = initDB().catch(err => {
+      readyPromise = null;
+      throw err;
+    });
+  }
+  return readyPromise;
+}
+
+// Kick off initialization eagerly in non-serverless local server mode
+if (!isVercel) {
+  ensureReady().catch(err => console.error('DB Init Error:', err));
+}
+
+db.ensureReady = ensureReady;
+db.isPersistentCloudDb = isPersistentCloudDb;
 
 module.exports = db;

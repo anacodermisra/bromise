@@ -88,20 +88,24 @@ export const LoginPage: React.FC = () => {
             />
           </div>
 
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-dark-800" />
-            <span className="flex-shrink mx-3 text-[10px] uppercase tracking-wider text-dark-500 font-semibold">Or Quick Demo</span>
-            <div className="flex-grow border-t border-dark-800" />
-          </div>
+          {import.meta.env.DEV && (
+            <>
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-dark-800" />
+                <span className="flex-shrink mx-3 text-[10px] uppercase tracking-wider text-dark-500 font-semibold">Or Quick Demo (Dev Only)</span>
+                <div className="flex-grow border-t border-dark-800" />
+              </div>
 
-          <button
-            onClick={handleDemoLogin}
-            disabled={demoLoading}
-            className="w-full py-3 rounded-xl bg-dark-850 hover:bg-dark-800 border border-dark-750 text-dark-300 hover:text-white text-xs font-semibold transition-all duration-200 flex items-center justify-center space-x-2"
-          >
-            <Sparkles className="w-4 h-4 text-theme-accent" />
-            <span>{demoLoading ? 'Signing in...' : 'Enter as Demo User'}</span>
-          </button>
+              <button
+                onClick={handleDemoLogin}
+                disabled={demoLoading}
+                className="w-full py-3 rounded-xl bg-dark-850 hover:bg-dark-800 border border-dark-750 text-dark-300 hover:text-white text-xs font-semibold transition-all duration-200 flex items-center justify-center space-x-2"
+              >
+                <Sparkles className="w-4 h-4 text-theme-accent" />
+                <span>{demoLoading ? 'Signing in...' : 'Enter as Demo User'}</span>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Footer */}

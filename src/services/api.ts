@@ -53,7 +53,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
-  health: () => req<{ status: string }>('GET', '/health'),
+  health: () => req<{ status: string; dbPersistent?: boolean }>('GET', '/health'),
 
   // Auth
   googleAuth: (credential: string) => req<{ token: string; user: any }>('POST', '/auth/google', { credential }),
@@ -111,9 +111,10 @@ export const api = {
   getHeatmap: (days?: number) =>
     req<any[]>('GET', `/stats/heatmap${days ? `?days=${days}` : ''}`),
 
-  // Export / Import / Reset
+  // Export / Import / Merge / Reset
   exportData: () => fetch(`${BASE}/export`, { headers: getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {} }).then(r => r.json()),
   importData: (data: any) => req<any>('POST', '/import', data),
+  mergeData: (data: any) => req<any>('POST', '/sync/merge', data),
   resetSeed: () => req<any>('POST', '/seed/reset', {}),
 
   // User Rooms (Gym & Study Cross-Device Sync)
