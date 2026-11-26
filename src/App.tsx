@@ -201,10 +201,10 @@ const MainAppContent: React.FC = () => {
   useEffect(() => {
     applyTheme(getStoredTheme());
     setActiveUser(user ? user.id : null);
-    initStorage();
-    reloadLocalData();
 
     if (user) {
+      initStorage();
+      reloadLocalData();
       initSync(() => {
         setServerOnline(isServerOnline());
         reloadLocalData();

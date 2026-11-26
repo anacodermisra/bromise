@@ -923,10 +923,13 @@ function readGuestJSON<T>(subKey: string, fallback: T): T {
 }
 
 export function getGuestSnapshot(): GuestSnapshot {
-  const categories = readGuestJSON<Category[]>('categories', []);
-  const tasks = readGuestJSON<Task[]>('tasks', []);
-  const dailyPlans = readGuestJSON<DailyPlanItem[]>('daily_plans', []);
-  const completions = readGuestJSON<TaskCompletion[]>('completions', []);
+  const seedCategoryIds = new Set(INITIAL_CATEGORIES.map(c => c.id));
+  const seedTaskIds = new Set(INITIAL_TASKS.map(t => t.id));
+
+  const categories = readGuestJSON<Category[]>('categories', []).filter(c => !seedCategoryIds.has(c.id));
+  const tasks = readGuestJSON<Task[]>('tasks', []).filter(t => !seedTaskIds.has(t.id));
+  const dailyPlans = readGuestJSON<DailyPlanItem[]>('daily_plans', []).filter(p => !seedTaskIds.has(p.taskId));
+  const completions = readGuestJSON<TaskCompletion[]>('completions', []).filter(c => !seedTaskIds.has(c.taskId));
   const gymSchedule = readGuestJSON<GymSchedule | null>('gym_schedule', null);
   const studyBooks = readGuestJSON<StudyBook[]>('study_books', []);
 
